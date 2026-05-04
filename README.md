@@ -677,6 +677,22 @@ The DDCA core has no built-in debug infrastructure and is not pipelined. As a re
 
 ## What the DDCA Core Is Missing for Debug
 
+
+
+> **A working, simulated implementation of everything below lives in
+> [`Debug Integration/`](./Debug%20Integration/).** It takes the textbook
+> `riscvsingle.v` from Section 7.6 of Harris & Harris, splits it into
+> per-module files, adds a `debug_fsm.sv`, extends the next-PC mux from 2:1
+> to 4:1, and runs in Verilator with a self-checking testbench that
+> exercises the full halt → resume round trip. See
+> [`Debug Integration/README.md`](./Debug%20Integration/README.md) for
+> files, run instructions, and the honest scope of what's implemented vs.
+> what's left as a future extension.
+>
+> The rest of this section walks through the *concepts*. The code in the
+> folder maps directly onto each subsection.
+
+
 Compared to CVE2, the DDCA core is missing five things:
 
 1. **The four debug interface signals** that connect the CPU to the Debug Module (`debug_req_i`, `debug_halted_o`, `dm_halt_addr_i`, `dm_exception_addr_i`).
@@ -702,7 +718,8 @@ A 1-bit register that tracks whether the CPU is in debug mode.
 
 - `1` → execute Debug ROM
 - `0` → execute normal program
-
+- 
+_Implementation note:_ `Debug Integration/debug_fsm.sv` declares all four debug CSRs and writes `dcsr.cause` on entry. CSR read/write _instructions_ (`csrrw` / `csrrs` / `csrrc`) are not implemented in this version — the debug ROM in the demo is a `dret` stub rather than a abstract command handler. Adding CSR instructions is the natural next extension.
 ### DM Interface Signals
 
 The `riscvsingle` module needs four new ports so the Debug Module can request a halt, observe the halted state, and tell the core where the Debug ROM lives in memory:
@@ -918,7 +935,20 @@ assign ReadData = dm_sel ? dm_rdata : mem_rdata;
 ```
 
 ---
+### What's in the implementation
 
+| Implemented in `Debug Integration/`            | Status                                           |
+| ---------------------------------------------- | ------------------------------------------------ |
+| `debug_req_i` / `debug_halted_o` interface     | ✅                                                |
+| Halt entry on `debug_req_i` or `ebreak`        | ✅                                                |
+| Resume on `dret`                               | ✅                                                |
+| `dpc` save/restore                             | ✅                                                |
+| `dscratch0` / `dscratch1` registers            | ⚠️ declared but unused (no CSR instructions yet) |
+| CSR instructions (`csrrw` / `csrrs` / `csrrc`) | ❌ not implemented                                |
+| Memory-polling park loop                       | ❌ debug ROM is a `dret` stub                     |
+| Exception handling (`dm_exception_addr_i`)     | ❌ wired through but unused                       |
+
+----
 ## What Stays the Same
 
 The key observation is that only the CPU core needs to be modified to support debug. The rest of the debug stack — riscv-dbg, the Debug ROM, OpenOCD, and GDB — remains unchanged. The Debug Module interacts with the CPU in exactly the same way regardless of the internal CPU design, so it does not care whether the CPU is single-cycle (DDCA) or pipelined (CVE2).
