@@ -680,12 +680,12 @@ The DDCA core has no built-in debug infrastructure and is not pipelined. As a re
 
 
 > **A working, simulated implementation of everything below lives in
-> [`Debug Integration/`](./Debug%20Integration/).** It takes the textbook
+> [`rtl`](./rtl/).** It takes the textbook
 > `riscvsingle.v` from Section 7.6 of Harris & Harris, splits it into
 > per-module files, adds a `debug_fsm.sv`, extends the next-PC mux from 2:1
 > to 4:1, and runs in Verilator with a self-checking testbench that
 > exercises the full halt → resume round trip. See
-> [`Debug Integration/README.md`](./Debug%20Integration/README.md) for
+> [`rtl/README.md`](./rtl/README.md) for
 > files, run instructions, and the honest scope of what's implemented vs.
 > what's left as a future extension.
 >
@@ -943,7 +943,7 @@ assign ReadData = dm_sel ? dm_rdata : mem_rdata;
 | Halt entry on `debug_req_i` or `ebreak`        | ✅                                                |
 | Resume on `dret`                               | ✅                                                |
 | `dpc` save/restore                             | ✅                                                |
-| `dscratch0` / `dscratch1` registers            | ⚠️ declared but unused (no CSR instructions yet) |
+| `dscratch0` / `dscratch1` registers            | declared but unused (no CSR instructions yet) |
 | CSR instructions (`csrrw` / `csrrs` / `csrrc`) | ❌ not implemented                                |
 | Memory-polling park loop                       | ❌ debug ROM is a `dret` stub                     |
 | Exception handling (`dm_exception_addr_i`)     | ❌ wired through but unused                       |
