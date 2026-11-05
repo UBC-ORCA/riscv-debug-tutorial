@@ -67,6 +67,12 @@ module gc_unit
         input logic interrupt_pending,
         output logic interrupt_taken,
 
+        //Debug
+        input logic debug_req_i,
+        output logic debug_mode_o,
+        input logic debug_single_step_i,
+        input logic trigger_match_i,
+
         //CSR signals
         input logic csr_frontend_flush,
         input logic [1:0] current_privilege,
@@ -138,6 +144,14 @@ module gc_unit
     logic [31:0] gc_pc;
 
     logic possible_exception;
+
+    //Debug
+    logic debug_mode_q;
+    logic debug_mode_d;
+    logic do_single_step_q;
+    logic do_single_step_d;
+    logic enter_debug_mode_prio_d;
+    logic enter_debug_mode;
 
     ////////////////////////////////////////////////////
     //Implementation
@@ -381,6 +395,12 @@ generate if (CONFIG.MODES != BARE) begin : gen_gc_m_mode
     assign gc.exception.source = exception_valid;
 
     assign interrupt_taken = interrupt_pending & (state == WAIT_INTERRUPT) & (next_state == PRE_ISSUE_FLUSH) & ~gc.exception.valid & ~csr_frontend_flush;
+
+    //Debug mode entry 
+    assign enter_debug_mode_prio_d = (debug_req_i | do_single_step_d) & ~debug_mode_q;
+    assign enter_debug_mode = enter_debug_mode_prio_d | (trigger_match_i & ~debug_mode_q);
+    assign debug_mode_o = debug_mode_q;
+    
     //Writeback and rename handling
     logic gc_writeback_suppress_r;
     logic gc_rename_revert;
