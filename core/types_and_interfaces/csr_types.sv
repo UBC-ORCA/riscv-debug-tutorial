@@ -96,6 +96,26 @@ package csr_types;
         logic zero4;
     } mstatus_t;
 
+    //Debug Control and Status (dcsr, 0x7B0), RISC-V Debug Spec v0.13.2
+    //dpc, dscratch0 and dscratch1 have no fields, so they are plain logic [31:0] in csr_unit (like mepc/mscratch)
+    typedef struct packed {
+        logic [3:0] xdebugver;
+        logic [11:0] zero2;
+        logic ebreakm;
+        logic zero1;
+        logic ebreaks;
+        logic ebreaku;
+        logic stepie;
+        logic stopcount;
+        logic stoptime;
+        logic [2:0] cause;
+        logic zero0;
+        logic mprven;
+        logic nmip;
+        logic step;
+        privilege_t prv;
+    } dcsr_t;
+
     typedef struct packed {
         logic [7:0] custom;
         logic [7:0] zeros;
