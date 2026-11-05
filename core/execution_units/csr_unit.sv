@@ -66,6 +66,9 @@ module csr_unit
         output logic interrupt_pending,
         output logic csr_frontend_flush,
 
+        //Debug
+        input logic debug_mode_i,
+
         //TLB and MMU
         output logic instruction_translation_on,
         output logic data_translation_on,
@@ -311,6 +314,12 @@ module csr_unit
     mcounter_t mcountinhibit;
     envcfgh_t menvcfgh;
     mstateen0h_t mstateen0h;
+
+    //Debug Registers
+    dcsr_t dcsr;
+    logic[31:0] dpc;
+    logic[31:0] dscratch0;
+    logic[31:0] dscratch1;
 
     //Virtualization support: TSR, TW, TVM unused
     //Extension context status: XS unused

@@ -154,6 +154,7 @@ module cva5
     logic csr_frontend_flush;
     logic interrupt_taken;
     logic interrupt_pending;
+    logic debug_mode;
 
     //CSR broadcast info
     logic [1:0] current_privilege;
@@ -512,6 +513,7 @@ module cva5
             .dyn_rm (dyn_rm),
             .interrupt_taken(interrupt_taken),
             .interrupt_pending(interrupt_pending),
+            .debug_mode_i(debug_mode),
             .csr_frontend_flush(csr_frontend_flush),
             .instruction_translation_on(instruction_translation_on),
             .data_translation_on(data_translation_on),
@@ -562,6 +564,7 @@ module cva5
         .sepc(sepc),
         .interrupt_taken(interrupt_taken),
         .interrupt_pending(interrupt_pending),
+        .debug_mode_o(debug_mode),
         .load_store_status(load_store_status)
     );
 
