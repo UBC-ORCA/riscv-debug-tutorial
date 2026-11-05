@@ -176,6 +176,18 @@ package riscv_types;
         MSTATEEN2H = 12'h31E,
         MSTATEEN3H = 12'h31F,   
 
+        //Debug trigger regs
+        TSELECT = 12'h7A0,
+        TDATA1 = 12'h7A1,
+        TDATA2 = 12'h7A2,
+        TDATA3 = 12'h7A3,
+
+        //Debug regs
+        DCSR = 12'h7B0,
+        DPC = 12'h7B1,
+        DSCRATCH0 = 12'h7B2,
+        DSCRATCH1 = 12'h7B3,
+
         //Supervisor regs
         //Supervisor Trap Setup
         SSTATUS = 12'h100,
