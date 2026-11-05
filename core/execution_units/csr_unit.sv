@@ -68,6 +68,7 @@ module csr_unit
 
         //Debug
         input logic debug_mode_i,
+        output logic trigger_match_o,
 
         //TLB and MMU
         output logic instruction_translation_on,
@@ -900,6 +901,9 @@ generate if (CONFIG.DEBUG.ENABLE & CONFIG.DEBUG.TRIGGER_ENABLE) begin : gen_csr_
     logic[CONFIG.DEBUG.NUM_TRIGGERS-1:0] tmatch_control_we;
     logic[CONFIG.DEBUG.NUM_TRIGGERS-1:0] tmatch_value_we;
 
+    //Trigger comparison result
+    logic[CONFIG.DEBUG.NUM_TRIGGERS-1:0] trigger_match;
+
     //Write select
     //Trigger registers are only writable in debug mode
     assign tselect_we = mwrite_en(TSELECT) & debug_mode_i;
@@ -971,10 +975,19 @@ generate if (CONFIG.DEBUG.ENABLE & CONFIG.DEBUG.TRIGGER_ENABLE) begin : gen_csr_
     //TDATA2: address match value only
     assign tmatch_value_rdata = selected_tmatch_value;
 
+    //Breakpoint matching
+    //Matches the issue stage PC, as fetch is speculative and the breakpoint must be taken before execution
+    //gc_unit is responsible for waiting until the issue stage PC is no longer speculative (as with interrupts)
+    for (genvar i = 0; i < CONFIG.DEBUG.NUM_TRIGGERS; i++) begin : gen_trigger_match
+        assign trigger_match[i] = tmatch_control[i] & issue_stage.stage_valid & (issue_stage.pc == tmatch_value[i]);
+    end
+    assign trigger_match_o = |trigger_match;
+
 end else begin : gen_no_csr_debug_triggers
     assign tselect_rdata = '0;
     assign tmatch_control_rdata = '0;
     assign tmatch_value_rdata = '0;
+    assign trigger_match_o = 0;
 end
 endgenerate
 
