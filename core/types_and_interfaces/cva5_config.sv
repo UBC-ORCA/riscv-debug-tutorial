@@ -51,6 +51,12 @@ package cva5_config;
         bit INCLUDE_SMSTATEEN;
     } csr_config_t;
 
+    typedef struct packed {
+        bit ENABLE; //Debug mode support (halt, single step, dret, debug CSRs)
+        bit TRIGGER_ENABLE; //Hardware breakpoint (trigger) support, requires ENABLE
+        int unsigned NUM_TRIGGERS; //Number of hardware breakpoints
+    } debug_config_t;
+
     //Memory range [L, H]
     //Address range is inclusive and must be aligned to its size
     typedef struct packed {
@@ -179,6 +185,8 @@ package cva5_config;
     
         //CSR constants
         csr_config_t CSRS;
+        //Debug options
+        debug_config_t DEBUG;
         //Memory Options
         int unsigned SQ_DEPTH;//CAM-based reasonable max of 4
         bit INCLUDE_FORWARDING_TO_STORES;
@@ -261,6 +269,12 @@ package cva5_config;
             INCLUDE_ZIHPM : 1,
             INCLUDE_SSTC : 1,
             INCLUDE_SMSTATEEN : 1
+        },
+        //Debug options
+        DEBUG : '{
+            ENABLE : 1,
+            TRIGGER_ENABLE : 1,
+            NUM_TRIGGERS : 1
         },
         //Memory Options
         SQ_DEPTH : 4,

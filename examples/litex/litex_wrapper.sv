@@ -142,6 +142,12 @@ module litex_wrapper
                 INCLUDE_SSTC : 1,
                 INCLUDE_SMSTATEEN : 1
             },
+            //Debug options
+            DEBUG : '{
+                ENABLE : 1,
+                TRIGGER_ENABLE : 1,
+                NUM_TRIGGERS : 1
+            },
             //Memory Options
             SQ_DEPTH : 4,
             INCLUDE_FORWARDING_TO_STORES : 1,

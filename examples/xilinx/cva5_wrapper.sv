@@ -114,6 +114,12 @@ module cva5_wrapper
             INCLUDE_SSTC : 0,
             INCLUDE_SMSTATEEN : 0
         },
+        //Debug options
+        DEBUG : '{
+            ENABLE : 1,
+            TRIGGER_ENABLE : 1,
+            NUM_TRIGGERS : 1
+        },
         //Memory Options
         SQ_DEPTH : 4,
         INCLUDE_FORWARDING_TO_STORES : 1,
