@@ -321,6 +321,11 @@ module csr_unit
     logic[31:0] dscratch0;
     logic[31:0] dscratch1;
 
+    //Debug trigger read data 
+    logic[31:0] tselect_rdata;
+    logic[31:0] tmatch_control_rdata;
+    logic[31:0] tmatch_value_rdata;
+
     //Virtualization support: TSR, TW, TVM unused
     //Extension context status: XS unused
     localparam mstatus_t mstatus_mask = '{
@@ -873,6 +878,112 @@ endgenerate
 
 
     ////////////////////////////////////////////////////
+    //BEGIN OF DEBUG TRIGGER REGS
+    ////////////////////////////////////////////////////
+generate if (CONFIG.DEBUG.ENABLE & CONFIG.DEBUG.TRIGGER_ENABLE) begin : gen_csr_debug_triggers
+    if (CONFIG.DEBUG.NUM_TRIGGERS < 1) begin : gen_num_triggers_check
+        $error("DEBUG.TRIGGER_ENABLE requires DEBUG.NUM_TRIGGERS >= 1");
+    end
+
+    localparam TSELECT_WIDTH = CONFIG.DEBUG.NUM_TRIGGERS > 1 ? $clog2(CONFIG.DEBUG.NUM_TRIGGERS) : 1; 
+    localparam MAX_TSELECT = CONFIG.DEBUG.NUM_TRIGGERS - 1; //Index of the last trigger
+
+    //Register values
+    logic[TSELECT_WIDTH-1:0] tselect;
+    logic[CONFIG.DEBUG.NUM_TRIGGERS-1:0] tmatch_control;
+    logic[31:0] tmatch_value [CONFIG.DEBUG.NUM_TRIGGERS];
+    logic selected_tmatch_control;
+    logic[31:0] selected_tmatch_value;
+
+    //Write enables
+    logic tselect_we;
+    logic[CONFIG.DEBUG.NUM_TRIGGERS-1:0] tmatch_control_we;
+    logic[CONFIG.DEBUG.NUM_TRIGGERS-1:0] tmatch_value_we;
+
+    //Write select
+    //Trigger registers are only writable in debug mode
+    assign tselect_we = mwrite_en(TSELECT) & debug_mode_i;
+    for (genvar i = 0; i < CONFIG.DEBUG.NUM_TRIGGERS; i++) begin : gen_tmatch_we
+        assign tmatch_control_we[i] = (tselect == TSELECT_WIDTH'(i)) & mwrite_en(TDATA1) & debug_mode_i;
+        assign tmatch_value_we[i] = (tselect == TSELECT_WIDTH'(i)) & mwrite_en(TDATA2) & debug_mode_i;
+    end
+
+    //Registers
+    
+    //TSELECT: values past the last trigger are clamped so the debugger can count triggers by reading back
+    always_ff @(posedge clk) begin
+        if (rst)
+            tselect <= '0;
+        else if (tselect_we)
+            tselect <= updated_csr < CONFIG.DEBUG.NUM_TRIGGERS ? updated_csr[TSELECT_WIDTH-1:0] : MAX_TSELECT[TSELECT_WIDTH-1:0];
+    end
+
+    for (genvar i = 0; i < CONFIG.DEBUG.NUM_TRIGGERS; i++) begin : gen_tmatch_regs
+        //TDATA1: only the execute bit is stored, the trigger is disabled out of reset
+        always_ff @(posedge clk) begin
+            if (rst)
+                tmatch_control[i] <= 0;
+            else if (tmatch_control_we[i])
+                tmatch_control[i] <= updated_csr[2];
+        end
+
+        //TDATA2: address to match against
+        always_ff @(posedge clk) begin
+            if (rst)
+                tmatch_value[i] <= '0;
+            else if (tmatch_value_we[i])
+                tmatch_value[i] <= updated_csr;
+        end
+    end
+
+    //Read data
+    //TSELECT: zero-extended to 32 bits
+    assign tselect_rdata = 32'(tselect);
+
+    //Select the trigger that tselect points at
+    if (CONFIG.DEBUG.NUM_TRIGGERS > 1) begin : gen_tmatch_multiple_select
+        assign selected_tmatch_control = tmatch_control[tselect];
+        assign selected_tmatch_value = tmatch_value[tselect];
+    end else begin : gen_tmatch_single_select
+        assign selected_tmatch_control = tmatch_control[0];
+        assign selected_tmatch_value = tmatch_value[0];
+    end
+
+    //TDATA1: mcontrol, only execute is stored, all other fields are hard-wired
+    assign tmatch_control_rdata = {4'h2,                        //type : address/data match
+                                   1'b1,                        //dmode : access from debug mode only
+                                   6'h00,                       //maskmax : exact match only
+                                   1'b0,                        //hit : not supported
+                                   1'b0,                        //select : address match only
+                                   1'b0,                        //timing : match before execution
+                                   2'b00,                       //sizelo : match any access
+                                   4'h1,                        //action : enter debug mode
+                                   1'b0,                        //chain : not supported
+                                   4'h0,                        //match : simple match
+                                   1'b1,                        //m : match in machine mode
+                                   1'b0,                        //zero
+                                   1'(CONFIG.MODES == MSU),     //s : match in supervisor mode
+                                   1'(CONFIG.MODES inside {MU, MSU}), //u : match in user mode
+                                   selected_tmatch_control,     //execute : match instruction address
+                                   1'b0,                        //store : not supported
+                                   1'b0};                       //load : not supported
+
+    //TDATA2: address match value only
+    assign tmatch_value_rdata = selected_tmatch_value;
+
+end else begin : gen_no_csr_debug_triggers
+    assign tselect_rdata = '0;
+    assign tmatch_control_rdata = '0;
+    assign tmatch_value_rdata = '0;
+end
+endgenerate
+
+    ////////////////////////////////////////////////////
+    //END OF DEBUG TRIGGER REGS
+    ////////////////////////////////////////////////////
+
+
+    ////////////////////////////////////////////////////
     //Timers and Counters
     //Register increment for instructions completed
     //Can be inhbited by mcountinhibit
@@ -978,6 +1089,7 @@ generate if (CONFIG.MODES != BARE) begin : gen_csr_exceptions
             MEDELEG, MIDELEG, MEDELEGH : legal_access = CONFIG.MODES == MSU & privilege_level == MACHINE_PRIVILEGE; //Read write, needs supervisor
             [MSTATEEN0:MSTATEEN3], [MSTATEEN0H:MSTATEEN3H] : legal_access = CONFIG.CSRS.INCLUDE_SMSTATEEN & privilege_level == MACHINE_PRIVILEGE; //Read write, needs extension
             MCOUNTEREN, MENVCFG, MENVCFGH : legal_access = CONFIG.MODES inside {MU, MSU} & privilege_level == MACHINE_PRIVILEGE; //Read write, needs user
+            TSELECT, TDATA1, TDATA2, TDATA3 : legal_access = CONFIG.DEBUG.ENABLE & CONFIG.DEBUG.TRIGGER_ENABLE & privilege_level == MACHINE_PRIVILEGE; //Read write, needs debug triggers 
             SSTATUS, SIE, STVEC, SCOUNTEREN, SSCRATCH, SEPC, SCAUSE, STVAL, SIP, SENVCFG : legal_access = CONFIG.MODES == MSU & privilege_level inside {MACHINE_PRIVILEGE, SUPERVISOR_PRIVILEGE}; //Read write
             SATP : legal_access = CONFIG.MODES == MSU & ((privilege_level == MACHINE_PRIVILEGE) | (privilege_level == SUPERVISOR_PRIVILEGE & ~mstatus.tvm)); //Read write, not TVM
             SENVCFG : legal_access = CONFIG.MODES == MSU & ((privilege_level == MACHINE_PRIVILEGE) | (privilege_level == SUPERVISOR_PRIVILEGE & (~CONFIG.CSRS.INCLUDE_SMSTATEEN | mstateen0h.envcfg))); //Read write, depends on mstateen0h
@@ -1092,6 +1204,11 @@ endgenerate
             MSTATEEN1H : selected_csr = CONFIG.MODES != BARE & CONFIG.CSRS.INCLUDE_SMSTATEEN ? mstateen1h : '0;
             MSTATEEN2H : selected_csr = CONFIG.MODES != BARE & CONFIG.CSRS.INCLUDE_SMSTATEEN ? mstateen2h : '0;
             MSTATEEN3H : selected_csr = CONFIG.MODES != BARE & CONFIG.CSRS.INCLUDE_SMSTATEEN ? mstateen3h : '0;
+            //Debug triggers
+            TSELECT : selected_csr = CONFIG.DEBUG.ENABLE & CONFIG.DEBUG.TRIGGER_ENABLE ? tselect_rdata : '0;
+            TDATA1 : selected_csr = CONFIG.DEBUG.ENABLE & CONFIG.DEBUG.TRIGGER_ENABLE ? tmatch_control_rdata : '0;
+            TDATA2 : selected_csr = CONFIG.DEBUG.ENABLE & CONFIG.DEBUG.TRIGGER_ENABLE ? tmatch_value_rdata : '0;
+            TDATA3 : selected_csr = '0;
 
             //Supervisor regs
             //Supervisor Trap Setup
