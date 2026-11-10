@@ -125,7 +125,7 @@ module gc_unit
     //LS exceptions (miss-aligned, TLB and MMU) (issue stage)
     //fetch flush, take exception. If execute or later exception occurs first, exception is overridden
     common_instruction_t instruction;//rs1_addr, rs2_addr, fn3, fn7, rd_addr, upper/lower opcode
-    typedef enum {RST_STATE, PRE_CLEAR_STATE, INIT_CLEAR_STATE, IDLE_STATE, TLB_CLEAR_STATE, WAIT_INTERRUPT, PRE_ISSUE_FLUSH, WAIT_WRITE} gc_state;
+    typedef enum {RST_STATE, PRE_CLEAR_STATE, INIT_CLEAR_STATE, IDLE_STATE, TLB_CLEAR_STATE, WAIT_NO_EXCEPTION, PRE_ISSUE_FLUSH, WAIT_WRITE} gc_state;
     gc_state state;
     gc_state next_state;
 
@@ -266,7 +266,7 @@ module gc_unit
 
     always_ff @ (posedge clk) begin
         gc_fetch_hold <= next_state inside {PRE_CLEAR_STATE, INIT_CLEAR_STATE, PRE_ISSUE_FLUSH, TLB_CLEAR_STATE, WAIT_WRITE};
-        gc_issue_hold <= next_state inside {PRE_CLEAR_STATE, INIT_CLEAR_STATE, WAIT_INTERRUPT, PRE_ISSUE_FLUSH, TLB_CLEAR_STATE, WAIT_WRITE};
+        gc_issue_hold <= next_state inside {PRE_CLEAR_STATE, INIT_CLEAR_STATE, WAIT_NO_EXCEPTION, PRE_ISSUE_FLUSH, TLB_CLEAR_STATE, WAIT_WRITE};
         gc_init_clear <= next_state inside {INIT_CLEAR_STATE};
         gc_fetch_ifence <= issue.new_request & is_ifence;
         gc_tlb_flush <= next_state inside {INIT_CLEAR_STATE, TLB_CLEAR_STATE};
@@ -303,9 +303,9 @@ module gc_unit
                 if ((issue.new_request & ~is_wfi & ~new_exception) | gc.exception.valid | csr_frontend_flush)
                     next_state = PRE_ISSUE_FLUSH;
                 else if (interrupt_pending)
-                    next_state = WAIT_INTERRUPT;
+                    next_state = WAIT_NO_EXCEPTION;
             end
-            WAIT_INTERRUPT : begin
+            WAIT_NO_EXCEPTION : begin
                 if (gc.exception.valid | csr_frontend_flush) //Exception overrides interrupt
                     next_state = PRE_ISSUE_FLUSH;
                 else if (~interrupt_pending) //Something cancelled the interrupt
@@ -394,7 +394,7 @@ generate if (CONFIG.MODES != BARE) begin : gen_gc_m_mode
     assign gc.exception.valid = |exception_valid;
     assign gc.exception.source = exception_valid;
 
-    assign interrupt_taken = interrupt_pending & (state == WAIT_INTERRUPT) & (next_state == PRE_ISSUE_FLUSH) & ~gc.exception.valid & ~csr_frontend_flush;
+    assign interrupt_taken = interrupt_pending & (state == WAIT_NO_EXCEPTION) & (next_state == PRE_ISSUE_FLUSH) & ~gc.exception.valid & ~csr_frontend_flush;
 
     //Debug mode entry 
     assign enter_debug_mode_prio_d = (debug_req_i | do_single_step_d) & ~debug_mode_q;
