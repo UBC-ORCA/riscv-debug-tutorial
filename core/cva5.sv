@@ -155,6 +155,7 @@ module cva5
     logic interrupt_taken;
     logic interrupt_pending;
     logic debug_mode;
+    logic trigger_match;
 
     //CSR broadcast info
     logic [1:0] current_privilege;
@@ -514,6 +515,7 @@ module cva5
             .interrupt_taken(interrupt_taken),
             .interrupt_pending(interrupt_pending),
             .debug_mode_i(debug_mode),
+            .trigger_match_o(trigger_match),
             .csr_frontend_flush(csr_frontend_flush),
             .instruction_translation_on(instruction_translation_on),
             .data_translation_on(data_translation_on),
@@ -565,6 +567,7 @@ module cva5
         .interrupt_taken(interrupt_taken),
         .interrupt_pending(interrupt_pending),
         .debug_mode_o(debug_mode),
+        .trigger_match_i(trigger_match),
         .load_store_status(load_store_status)
     );
 
