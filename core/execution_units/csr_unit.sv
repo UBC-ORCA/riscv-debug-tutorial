@@ -68,6 +68,7 @@ module csr_unit
 
         //Debug
         input logic debug_mode_i,
+        input logic debug_taken_i,
         output logic trigger_match_o,
 
         //TLB and MMU
@@ -607,6 +608,18 @@ end
             mepc[31:2] <= '0;
         else if (mwrite_en(MEPC) | (exception_pkt.valid & ~exception_delegated) | (interrupt_taken & ~interrupt_delegated))
             mepc[31:2] <= (exception_pkt.valid | interrupt_taken) ? exception_pkt.pc[31:2] : updated_csr[31:2];
+    end
+
+    ////////////////////////////////////////////////////
+    //DPC
+    //Written on debug entry with the next instruction PC
+    //or the ebreak PC.  Lower two bits tied to zero.
+    always_ff @(posedge clk) begin
+        dpc[1:0] <= '0;
+        if (rst)
+            dpc[31:2] <= '0;
+        else if (debug_taken_i)
+            dpc[31:2] <= exception_pkt.pc[31:2];
     end
 
     ////////////////////////////////////////////////////

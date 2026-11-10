@@ -155,6 +155,7 @@ module cva5
     logic interrupt_taken;
     logic interrupt_pending;
     logic debug_mode;
+    logic debug_taken;
     logic trigger_match;
 
     //CSR broadcast info
@@ -515,6 +516,7 @@ module cva5
             .interrupt_taken(interrupt_taken),
             .interrupt_pending(interrupt_pending),
             .debug_mode_i(debug_mode),
+            .debug_taken_i(debug_taken),
             .trigger_match_o(trigger_match),
             .csr_frontend_flush(csr_frontend_flush),
             .instruction_translation_on(instruction_translation_on),
@@ -567,6 +569,7 @@ module cva5
         .interrupt_taken(interrupt_taken),
         .interrupt_pending(interrupt_pending),
         .debug_mode_o(debug_mode),
+        .debug_taken_o(debug_taken),
         .trigger_match_i(trigger_match),
         .load_store_status(load_store_status)
     );

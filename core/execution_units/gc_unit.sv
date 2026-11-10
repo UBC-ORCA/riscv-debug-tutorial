@@ -70,6 +70,7 @@ module gc_unit
         //Debug
         input logic debug_req_i,
         output logic debug_mode_o,
+        output logic debug_taken_o,
         input logic debug_single_step_i,
         input logic trigger_match_i,
 
@@ -402,6 +403,7 @@ generate if (CONFIG.MODES != BARE) begin : gen_gc_m_mode
     assign enter_debug_mode_prio_d = (debug_req_i | do_single_step_d) & ~debug_mode_q;
     assign enter_debug_mode = enter_debug_mode_prio_d | (trigger_match_i & ~debug_mode_q);
     assign debug_mode_o = debug_mode_q;
+    assign debug_taken_o = (next_state == DBG_TAKEN); //One cycle pulse, csr_unit captures dpc while gc.exception.pc still selects the right PC
 
     //Debug mode register
     assign debug_mode_d = debug_mode_q | (state == DBG_TAKEN);
