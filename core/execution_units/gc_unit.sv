@@ -302,15 +302,15 @@ module gc_unit
             IDLE_STATE : begin
                 if ((issue.new_request & ~is_wfi & ~new_exception) | gc.exception.valid | csr_frontend_flush)
                     next_state = PRE_ISSUE_FLUSH;
-                else if (interrupt_pending)
+                else if (interrupt_pending | enter_debug_mode)
                     next_state = WAIT_NO_EXCEPTION;
             end
             WAIT_NO_EXCEPTION : begin
                 if (gc.exception.valid | csr_frontend_flush) //Exception overrides interrupt
                     next_state = PRE_ISSUE_FLUSH;
-                else if (~interrupt_pending) //Something cancelled the interrupt
+                else if (~interrupt_pending & ~enter_debug_mode) //Something cancelled the interrupt and no halt is pending
                     next_state = IDLE_STATE;
-                else if (~possible_exception & issue_stage.stage_valid & ~branch_flush) //No more possible exceptions and issue stage has correct PC
+                else if (~possible_exception & issue_stage.stage_valid & ~branch_flush) //Safe point: no more possible exceptions and issue stage has correct PC, only now can the interrupt or halt be served
                     next_state = PRE_ISSUE_FLUSH;
             end
             PRE_ISSUE_FLUSH : begin
