@@ -116,6 +116,14 @@ package csr_types;
         privilege_t prv;
     } dcsr_t;
 
+    //dcsr.cause encoding, RISC-V Debug Spec v0.13.2
+    typedef enum logic [2:0] {
+        DBG_CAUSE_EBREAK = 3'd1,
+        DBG_CAUSE_TRIGGER = 3'd2,
+        DBG_CAUSE_HALTREQ = 3'd3,
+        DBG_CAUSE_STEP = 3'd4
+    } debug_cause_t;
+
     typedef struct packed {
         logic [7:0] custom;
         logic [7:0] zeros;

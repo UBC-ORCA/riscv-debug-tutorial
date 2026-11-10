@@ -69,6 +69,7 @@ module csr_unit
         //Debug
         input logic debug_mode_i,
         input logic debug_taken_i,
+        input debug_cause_t debug_cause_i,
         output logic trigger_match_o,
 
         //TLB and MMU
@@ -627,6 +628,23 @@ end
     end
 
     ////////////////////////////////////////////////////
+    //DCSR
+    //Cause and prv written on debug entry.  Debugger can
+    //write the ebreak enables, step and prv in debug mode.
+    localparam dcsr_t dcsr_mask = '{default:0, ebreakm:1, ebreaks:CONFIG.MODES == MSU, ebreaku:CONFIG.MODES inside {MU, MSU}, step:1, prv:'1};
+
+    always_ff @(posedge clk) begin
+        if (rst)
+            dcsr <= '{default:0, xdebugver:4, prv:MACHINE_PRIVILEGE};
+        else if (debug_taken_i & ~debug_mode_i) begin
+            dcsr.cause <= debug_cause_i;
+            dcsr.prv <= privilege_level;
+        end
+        else if (mwrite_en(DCSR) & debug_mode_i)
+            dcsr <= (dcsr & ~dcsr_mask) | (updated_csr & dcsr_mask);
+    end
+
+    ////////////////////////////////////////////////////
     //MCAUSE
     //Can be software written, written on exception or
     //interrupt with specific code
@@ -1119,6 +1137,7 @@ generate if (CONFIG.MODES != BARE) begin : gen_csr_exceptions
             MEDELEG, MIDELEG, MEDELEGH : legal_access = CONFIG.MODES == MSU & privilege_level == MACHINE_PRIVILEGE; //Read write, needs supervisor
             [MSTATEEN0:MSTATEEN3], [MSTATEEN0H:MSTATEEN3H] : legal_access = CONFIG.CSRS.INCLUDE_SMSTATEEN & privilege_level == MACHINE_PRIVILEGE; //Read write, needs extension
             MCOUNTEREN, MENVCFG, MENVCFGH : legal_access = CONFIG.MODES inside {MU, MSU} & privilege_level == MACHINE_PRIVILEGE; //Read write, needs user
+            DCSR : legal_access = CONFIG.DEBUG.ENABLE & debug_mode_i; //Read write, debug mode only
             TSELECT, TDATA1, TDATA2, TDATA3 : legal_access = CONFIG.DEBUG.ENABLE & CONFIG.DEBUG.TRIGGER_ENABLE & privilege_level == MACHINE_PRIVILEGE; //Read write, needs debug triggers 
             SSTATUS, SIE, STVEC, SCOUNTEREN, SSCRATCH, SEPC, SCAUSE, STVAL, SIP, SENVCFG : legal_access = CONFIG.MODES == MSU & privilege_level inside {MACHINE_PRIVILEGE, SUPERVISOR_PRIVILEGE}; //Read write
             SATP : legal_access = CONFIG.MODES == MSU & ((privilege_level == MACHINE_PRIVILEGE) | (privilege_level == SUPERVISOR_PRIVILEGE & ~mstatus.tvm)); //Read write, not TVM
@@ -1234,6 +1253,8 @@ endgenerate
             MSTATEEN1H : selected_csr = CONFIG.MODES != BARE & CONFIG.CSRS.INCLUDE_SMSTATEEN ? mstateen1h : '0;
             MSTATEEN2H : selected_csr = CONFIG.MODES != BARE & CONFIG.CSRS.INCLUDE_SMSTATEEN ? mstateen2h : '0;
             MSTATEEN3H : selected_csr = CONFIG.MODES != BARE & CONFIG.CSRS.INCLUDE_SMSTATEEN ? mstateen3h : '0;
+            //Debug
+            DCSR : selected_csr = CONFIG.DEBUG.ENABLE ? dcsr : '0;
             //Debug triggers
             TSELECT : selected_csr = CONFIG.DEBUG.ENABLE & CONFIG.DEBUG.TRIGGER_ENABLE ? tselect_rdata : '0;
             TDATA1 : selected_csr = CONFIG.DEBUG.ENABLE & CONFIG.DEBUG.TRIGGER_ENABLE ? tmatch_control_rdata : '0;

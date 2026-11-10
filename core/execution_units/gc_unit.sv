@@ -71,6 +71,7 @@ module gc_unit
         input logic debug_req_i,
         output logic debug_mode_o,
         output logic debug_taken_o,
+        output debug_cause_t debug_cause_o,
         input logic debug_single_step_i,
         input logic trigger_match_i,
 
@@ -408,6 +409,18 @@ generate if (CONFIG.MODES != BARE) begin : gen_gc_m_mode
     assign debug_mode_o = debug_mode_q;
     //Ebreak in debug mode re-enters the debug ROM instead of trapping
     assign ebreak_to_debug = exception_valid[PRE_ISSUE_EXCEPTION] & (gc.exception.code == BREAK) & debug_mode_q;
+
+    //Debug cause for dcsr, sampled by csr_unit with debug_taken_o, highest spec priority first
+    always_comb begin
+        if (trigger_match_i)
+            debug_cause_o = DBG_CAUSE_TRIGGER;
+        else if (ebreak_to_debug)
+            debug_cause_o = DBG_CAUSE_EBREAK;
+        else if (debug_req_i)
+            debug_cause_o = DBG_CAUSE_HALTREQ;
+        else
+            debug_cause_o = DBG_CAUSE_STEP;
+    end
     assign debug_taken_o = (next_state == DBG_TAKEN); //One cycle pulse, csr_unit captures dpc while gc.exception.pc still selects the right PC
 
     //Debug mode register
