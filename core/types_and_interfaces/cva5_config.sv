@@ -55,6 +55,7 @@ package cva5_config;
         bit ENABLE; //Debug mode support (halt, single step, dret, debug CSRs)
         bit TRIGGER_ENABLE; //Hardware breakpoint (trigger) support, requires ENABLE
         int unsigned NUM_TRIGGERS; //Number of hardware breakpoints
+        bit [31:0] HALT_ADDR; //Debug ROM halt entry, fetch jumps here on debug entry
     } debug_config_t;
 
     //Memory range [L, H]
@@ -274,7 +275,8 @@ package cva5_config;
         DEBUG : '{
             ENABLE : 1,
             TRIGGER_ENABLE : 1,
-            NUM_TRIGGERS : 1
+            NUM_TRIGGERS : 1,
+            HALT_ADDR : 32'h1A110800
         },
         //Memory Options
         SQ_DEPTH : 4,

@@ -146,7 +146,8 @@ module litex_wrapper
             DEBUG : '{
                 ENABLE : 1,
                 TRIGGER_ENABLE : 1,
-                NUM_TRIGGERS : 1
+                NUM_TRIGGERS : 1,
+                HALT_ADDR : 32'h1A110800
             },
             //Memory Options
             SQ_DEPTH : 4,
