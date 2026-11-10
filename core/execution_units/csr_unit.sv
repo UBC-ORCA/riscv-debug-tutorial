@@ -70,6 +70,7 @@ module csr_unit
         input logic debug_mode_i,
         input logic debug_taken_i,
         input debug_cause_t debug_cause_i,
+        output logic ebreak_into_debug_o,
         output logic trigger_match_o,
 
         //TLB and MMU
@@ -642,6 +643,16 @@ end
         end
         else if (mwrite_en(DCSR) & debug_mode_i)
             dcsr <= (dcsr & ~dcsr_mask) | (updated_csr & dcsr_mask);
+    end
+
+    //Ebreak enters debug mode instead of trapping when dcsr enables it for the current privilege
+    always_comb begin
+        case (privilege_level)
+            MACHINE_PRIVILEGE : ebreak_into_debug_o = dcsr.ebreakm;
+            SUPERVISOR_PRIVILEGE : ebreak_into_debug_o = dcsr.ebreaks;
+            USER_PRIVILEGE : ebreak_into_debug_o = dcsr.ebreaku;
+            default : ebreak_into_debug_o = 0;
+        endcase
     end
 
     ////////////////////////////////////////////////////

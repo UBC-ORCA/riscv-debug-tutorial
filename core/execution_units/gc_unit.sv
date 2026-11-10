@@ -72,6 +72,7 @@ module gc_unit
         output logic debug_mode_o,
         output logic debug_taken_o,
         output debug_cause_t debug_cause_o,
+        input logic ebreak_into_debug_i,
         input logic debug_single_step_i,
         input logic trigger_match_i,
 
@@ -407,8 +408,8 @@ generate if (CONFIG.MODES != BARE) begin : gen_gc_m_mode
     assign enter_debug_mode_prio_d = (debug_req_i | do_single_step_d) & ~debug_mode_q;
     assign enter_debug_mode = enter_debug_mode_prio_d | (trigger_match_i & ~debug_mode_q);
     assign debug_mode_o = debug_mode_q;
-    //Ebreak in debug mode re-enters the debug ROM instead of trapping
-    assign ebreak_to_debug = exception_valid[PRE_ISSUE_EXCEPTION] & (gc.exception.code == BREAK) & debug_mode_q;
+    //Ebreak goes to the debug ROM instead of trapping: re-entry in debug mode, or entry when dcsr enables it
+    assign ebreak_to_debug = exception_valid[PRE_ISSUE_EXCEPTION] & (gc.exception.code == BREAK) & (debug_mode_q | ebreak_into_debug_i);
 
     //Debug cause for dcsr, sampled by csr_unit with debug_taken_o, highest spec priority first
     always_comb begin
