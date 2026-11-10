@@ -125,7 +125,7 @@ module gc_unit
     //LS exceptions (miss-aligned, TLB and MMU) (issue stage)
     //fetch flush, take exception. If execute or later exception occurs first, exception is overridden
     common_instruction_t instruction;//rs1_addr, rs2_addr, fn3, fn7, rd_addr, upper/lower opcode
-    typedef enum {RST_STATE, PRE_CLEAR_STATE, INIT_CLEAR_STATE, IDLE_STATE, TLB_CLEAR_STATE, WAIT_NO_EXCEPTION, PRE_ISSUE_FLUSH, WAIT_WRITE} gc_state;
+    typedef enum {RST_STATE, PRE_CLEAR_STATE, INIT_CLEAR_STATE, IDLE_STATE, TLB_CLEAR_STATE, WAIT_NO_EXCEPTION, DBG_TAKEN, PRE_ISSUE_FLUSH, WAIT_WRITE} gc_state;
     gc_state state;
     gc_state next_state;
 
@@ -266,7 +266,7 @@ module gc_unit
 
     always_ff @ (posedge clk) begin
         gc_fetch_hold <= next_state inside {PRE_CLEAR_STATE, INIT_CLEAR_STATE, PRE_ISSUE_FLUSH, TLB_CLEAR_STATE, WAIT_WRITE};
-        gc_issue_hold <= next_state inside {PRE_CLEAR_STATE, INIT_CLEAR_STATE, WAIT_NO_EXCEPTION, PRE_ISSUE_FLUSH, TLB_CLEAR_STATE, WAIT_WRITE};
+        gc_issue_hold <= next_state inside {PRE_CLEAR_STATE, INIT_CLEAR_STATE, WAIT_NO_EXCEPTION, DBG_TAKEN, PRE_ISSUE_FLUSH, TLB_CLEAR_STATE, WAIT_WRITE};
         gc_init_clear <= next_state inside {INIT_CLEAR_STATE};
         gc_fetch_ifence <= issue.new_request & is_ifence;
         gc_tlb_flush <= next_state inside {INIT_CLEAR_STATE, TLB_CLEAR_STATE};
@@ -311,14 +311,16 @@ module gc_unit
                 else if (~interrupt_pending & ~enter_debug_mode) //Something cancelled the interrupt and no halt is pending
                     next_state = IDLE_STATE;
                 else if (~possible_exception & issue_stage.stage_valid & ~branch_flush) //Safe point: no more possible exceptions and issue stage has correct PC, only now can the interrupt or halt be served
-                    next_state = PRE_ISSUE_FLUSH;
+                    next_state = enter_debug_mode ? DBG_TAKEN : PRE_ISSUE_FLUSH; //Halt wins over interrupt
             end
+            //Debug entry: set debug mode, then reuse PRE_ISSUE_FLUSH to redirect fetch
+            DBG_TAKEN : next_state = PRE_ISSUE_FLUSH;
             PRE_ISSUE_FLUSH : begin
                 if (is_sfence_r)
                     next_state = TLB_CLEAR_STATE;
                 else if (is_ifence_r)
                     next_state = WAIT_WRITE;
-                else //MRET/SRET, exception, interrupt, CSR flush
+                else //MRET/SRET, exception, interrupt, debug entry, CSR flush
                     next_state = IDLE_STATE;
             end
             //gc.exception will never be set in these states
@@ -400,7 +402,17 @@ generate if (CONFIG.MODES != BARE) begin : gen_gc_m_mode
     assign enter_debug_mode_prio_d = (debug_req_i | do_single_step_d) & ~debug_mode_q;
     assign enter_debug_mode = enter_debug_mode_prio_d | (trigger_match_i & ~debug_mode_q);
     assign debug_mode_o = debug_mode_q;
-    
+
+    //Debug mode register
+    assign debug_mode_d = debug_mode_q | (state == DBG_TAKEN);
+
+    always_ff @(posedge clk) begin
+        if (rst)
+            debug_mode_q <= 0;
+        else
+            debug_mode_q <= debug_mode_d;
+    end
+
     //Writeback and rename handling
     logic gc_writeback_suppress_r;
     logic gc_rename_revert;
@@ -425,7 +437,9 @@ generate if (CONFIG.MODES != BARE || CONFIG.INCLUDE_IFENCE) begin :gen_gc_pc_ove
 
     always_ff @ (posedge clk) begin
         gc_pc_override <= next_state inside {PRE_ISSUE_FLUSH, INIT_CLEAR_STATE};
-        if (gc.exception.valid | interrupt_taken)
+        if (state == DBG_TAKEN)
+            gc_pc <= CONFIG.DEBUG.HALT_ADDR;
+        else if (gc.exception.valid | interrupt_taken)
             gc_pc <= exception_target_pc;
         else if (instruction_issued) begin
             if (is_mret)
