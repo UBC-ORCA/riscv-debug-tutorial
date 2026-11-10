@@ -153,6 +153,7 @@ module gc_unit
     logic do_single_step_d;
     logic enter_debug_mode_prio_d;
     logic enter_debug_mode;
+    logic ebreak_to_debug;
 
     ////////////////////////////////////////////////////
     //Implementation
@@ -301,14 +302,16 @@ module gc_unit
             PRE_CLEAR_STATE : next_state = INIT_CLEAR_STATE;
             INIT_CLEAR_STATE : if (init_clear_done) next_state = IDLE_STATE;
             IDLE_STATE : begin
-                if ((issue.new_request & ~is_wfi & ~new_exception) | gc.exception.valid | csr_frontend_flush)
+                if (ebreak_to_debug)
+                    next_state = DBG_TAKEN;
+                else if ((issue.new_request & ~is_wfi & ~new_exception) | gc.exception.valid | csr_frontend_flush)
                     next_state = PRE_ISSUE_FLUSH;
                 else if (interrupt_pending | enter_debug_mode)
                     next_state = WAIT_NO_EXCEPTION;
             end
             WAIT_NO_EXCEPTION : begin
                 if (gc.exception.valid | csr_frontend_flush) //Exception overrides interrupt
-                    next_state = PRE_ISSUE_FLUSH;
+                    next_state = ebreak_to_debug ? DBG_TAKEN : PRE_ISSUE_FLUSH;
                 else if (~interrupt_pending & ~enter_debug_mode) //Something cancelled the interrupt and no halt is pending
                     next_state = IDLE_STATE;
                 else if (~possible_exception & issue_stage.stage_valid & ~branch_flush) //Safe point: no more possible exceptions and issue stage has correct PC, only now can the interrupt or halt be served
@@ -403,6 +406,8 @@ generate if (CONFIG.MODES != BARE) begin : gen_gc_m_mode
     assign enter_debug_mode_prio_d = (debug_req_i | do_single_step_d) & ~debug_mode_q;
     assign enter_debug_mode = enter_debug_mode_prio_d | (trigger_match_i & ~debug_mode_q);
     assign debug_mode_o = debug_mode_q;
+    //Ebreak in debug mode re-enters the debug ROM instead of trapping
+    assign ebreak_to_debug = exception_valid[PRE_ISSUE_EXCEPTION] & (gc.exception.code == BREAK) & debug_mode_q;
     assign debug_taken_o = (next_state == DBG_TAKEN); //One cycle pulse, csr_unit captures dpc while gc.exception.pc still selects the right PC
 
     //Debug mode register

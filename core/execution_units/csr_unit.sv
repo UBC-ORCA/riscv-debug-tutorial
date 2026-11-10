@@ -142,6 +142,7 @@ module csr_unit
     logic [31:0] updated_csr;
     logic [31:0] next_csr;
 
+    logic trap_valid;
     logic exception_delegated;
     logic interrupt_delegated;
     logic [ECODE_W-1:0] interrupt_cause;
@@ -367,17 +368,20 @@ generate if (CONFIG.MODES != BARE) begin : gen_csr_m_mode
             fflag_wmask_r <= fflag_wmask;
     end
 
+    //Exceptions that enter debug mode are not traps
+    assign trap_valid = exception_pkt.valid & ~debug_taken_i;
+
     //Interrupt and Exception Delegation
     //Can delegate to supervisor if currently in supervisor or user modes
     logic can_delegate;
 
     assign can_delegate = CONFIG.MODES == MSU & privilege_level inside {SUPERVISOR_PRIVILEGE, USER_PRIVILEGE};
-    assign exception_delegated = can_delegate & exception_pkt.valid & medeleg[exception_pkt.code];
+    assign exception_delegated = can_delegate & trap_valid & medeleg[exception_pkt.code];
     assign interrupt_delegated = can_delegate & interrupt_taken & mideleg[interrupt_cause];
 
     one_hot_to_integer #(6)
     mstatus_case_one_hot (
-        .one_hot ({sret, mret, exception_pkt.valid, interrupt_taken, (mwrite_en(MSTATUS) | swrite_en(SSTATUS)), 1'b0}), 
+        .one_hot ({sret, mret, trap_valid, interrupt_taken, (mwrite_en(MSTATUS) | swrite_en(SSTATUS)), 1'b0}), 
         .int_out (mstatus_case)
     );
 
@@ -606,8 +610,8 @@ end
         mepc[1:0] <= '0;
         if (rst)
             mepc[31:2] <= '0;
-        else if (mwrite_en(MEPC) | (exception_pkt.valid & ~exception_delegated) | (interrupt_taken & ~interrupt_delegated))
-            mepc[31:2] <= (exception_pkt.valid | interrupt_taken) ? exception_pkt.pc[31:2] : updated_csr[31:2];
+        else if (mwrite_en(MEPC) | (trap_valid & ~exception_delegated) | (interrupt_taken & ~interrupt_delegated))
+            mepc[31:2] <= (trap_valid | interrupt_taken) ? exception_pkt.pc[31:2] : updated_csr[31:2];
     end
 
     ////////////////////////////////////////////////////
@@ -618,7 +622,7 @@ end
         dpc[1:0] <= '0;
         if (rst)
             dpc[31:2] <= '0;
-        else if (debug_taken_i)
+        else if (debug_taken_i & ~debug_mode_i)
             dpc[31:2] <= exception_pkt.pc[31:2];
     end
 
@@ -655,9 +659,9 @@ end
             mcause.is_interrupt <= 0;
             mcause.code <= '0;
         end
-        else if ((mwrite_en(MCAUSE) | (exception_pkt.valid & ~exception_delegated) | (interrupt_taken & ~interrupt_delegated))) begin
+        else if ((mwrite_en(MCAUSE) | (trap_valid & ~exception_delegated) | (interrupt_taken & ~interrupt_delegated))) begin
             mcause.is_interrupt <= interrupt_taken | (mwrite_en(MCAUSE) & updated_csr[31]);
-            mcause.code <= interrupt_taken ? interrupt_cause : exception_pkt.valid ? exception_pkt.code : updated_csr[ECODE_W-1:0];
+            mcause.code <= interrupt_taken ? interrupt_cause : trap_valid ? exception_pkt.code : updated_csr[ECODE_W-1:0];
         end
     end
 
@@ -666,8 +670,8 @@ end
     always_ff @(posedge clk) begin
         if (rst)
             mtval <= '0;
-        else if (mwrite_en(MTVAL) | (exception_pkt.valid & ~exception_delegated))
-            mtval <= exception_pkt.valid ? exception_pkt.tval : updated_csr;
+        else if (mwrite_en(MTVAL) | (trap_valid & ~exception_delegated))
+            mtval <= trap_valid ? exception_pkt.tval : updated_csr;
     end
 
     ////////////////////////////////////////////////////
@@ -779,8 +783,8 @@ generate if (CONFIG.MODES == MSU) begin : gen_csr_s_mode
         sepc[1:0] <= '0;
         if (rst)
             sepc[31:2] <= '0;
-        else if (swrite_en(SEPC) | (exception_pkt.valid & exception_delegated) | (interrupt_taken & interrupt_delegated))
-            sepc[31:2] <= (exception_pkt.valid | interrupt_taken) ? exception_pkt.pc[31:2] : updated_csr[31:2];
+        else if (swrite_en(SEPC) | (trap_valid & exception_delegated) | (interrupt_taken & interrupt_delegated))
+            sepc[31:2] <= (trap_valid | interrupt_taken) ? exception_pkt.pc[31:2] : updated_csr[31:2];
     end
 
     ////////////////////////////////////////////////////
@@ -791,9 +795,9 @@ generate if (CONFIG.MODES == MSU) begin : gen_csr_s_mode
             scause.is_interrupt <= 0;
             scause.code <= '0;
         end
-        else if ((swrite_en(SCAUSE) | (exception_pkt.valid & exception_delegated) | (interrupt_taken & interrupt_delegated))) begin
+        else if ((swrite_en(SCAUSE) | (trap_valid & exception_delegated) | (interrupt_taken & interrupt_delegated))) begin
             scause.is_interrupt <= interrupt_taken | (swrite_en(SCAUSE) & updated_csr[31]);
-            scause.code <= interrupt_taken ? interrupt_cause : exception_pkt.valid ? exception_pkt.code : updated_csr[ECODE_W-1:0];
+            scause.code <= interrupt_taken ? interrupt_cause : trap_valid ? exception_pkt.code : updated_csr[ECODE_W-1:0];
         end
     end
 
@@ -812,8 +816,8 @@ generate if (CONFIG.MODES == MSU) begin : gen_csr_s_mode
     always_ff @(posedge clk) begin
         if (rst)
             stval <= '0;
-        else if (swrite_en(STVAL) | (exception_pkt.valid & exception_delegated))
-            stval <= exception_pkt.valid ? exception_pkt.tval : updated_csr;
+        else if (swrite_en(STVAL) | (trap_valid & exception_delegated))
+            stval <= trap_valid ? exception_pkt.tval : updated_csr;
     end
 
     ////////////////////////////////////////////////////
