@@ -68,15 +68,15 @@ module gc_unit
         output logic interrupt_taken,
 
         //Debug
-        input logic debug_req_i,
-        output logic debug_mode_o,
-        output logic debug_taken_o,
-        output debug_cause_t debug_cause_o,
-        input logic ebreak_into_debug_i,
+        input logic debug_req,
+        output logic debug_mode,
+        output logic debug_taken,
+        output debug_cause_t debug_cause,
+        input logic ebreak_into_debug,
         output logic dret,
         input logic [31:0] dpc,
-        input logic debug_single_step_i,
-        input logic trigger_match_i,
+        input logic debug_single_step,
+        input logic trigger_match,
 
         //CSR signals
         input logic csr_frontend_flush,
@@ -413,24 +413,24 @@ generate if (CONFIG.MODES != BARE) begin : gen_gc_m_mode
     assign interrupt_taken = interrupt_pending & (state == WAIT_NO_EXCEPTION) & (next_state == PRE_ISSUE_FLUSH) & ~gc.exception.valid & ~csr_frontend_flush;
 
     //Debug mode entry 
-    assign enter_debug_mode_prio_d = (debug_req_i | do_single_step_d) & ~debug_mode_q;
-    assign enter_debug_mode = enter_debug_mode_prio_d | (trigger_match_i & ~debug_mode_q);
-    assign debug_mode_o = debug_mode_q;
+    assign enter_debug_mode_prio_d = (debug_req | do_single_step_d) & ~debug_mode_q;
+    assign enter_debug_mode = enter_debug_mode_prio_d | (trigger_match & ~debug_mode_q);
+    assign debug_mode = debug_mode_q;
     //Ebreak goes to the debug ROM instead of trapping: re-entry in debug mode, or entry when dcsr enables it
-    assign ebreak_to_debug = exception_valid[PRE_ISSUE_EXCEPTION] & (gc.exception.code == BREAK) & (debug_mode_q | ebreak_into_debug_i);
+    assign ebreak_to_debug = exception_valid[PRE_ISSUE_EXCEPTION] & (gc.exception.code == BREAK) & (debug_mode_q | ebreak_into_debug);
 
-    //Debug cause for dcsr, sampled by csr_unit with debug_taken_o, highest spec priority first
+    //Debug cause for dcsr, sampled by csr_unit with debug_taken, highest spec priority first
     always_comb begin
-        if (trigger_match_i)
-            debug_cause_o = DBG_CAUSE_TRIGGER;
+        if (trigger_match)
+            debug_cause = DBG_CAUSE_TRIGGER;
         else if (ebreak_to_debug)
-            debug_cause_o = DBG_CAUSE_EBREAK;
-        else if (debug_req_i)
-            debug_cause_o = DBG_CAUSE_HALTREQ;
+            debug_cause = DBG_CAUSE_EBREAK;
+        else if (debug_req)
+            debug_cause = DBG_CAUSE_HALTREQ;
         else
-            debug_cause_o = DBG_CAUSE_STEP;
+            debug_cause = DBG_CAUSE_STEP;
     end
-    assign debug_taken_o = (next_state == DBG_TAKEN); //One cycle pulse, csr_unit captures dpc while gc.exception.pc still selects the right PC
+    assign debug_taken = (next_state == DBG_TAKEN); //One cycle pulse, csr_unit captures dpc while gc.exception.pc still selects the right PC
 
     //Debug mode register
     assign debug_mode_d = (debug_mode_q | (state == DBG_TAKEN)) & ~dret;

@@ -67,13 +67,13 @@ module csr_unit
         output logic csr_frontend_flush,
 
         //Debug
-        input logic debug_mode_i,
-        input logic debug_taken_i,
-        input debug_cause_t debug_cause_i,
-        output logic ebreak_into_debug_o,
+        input logic debug_mode,
+        input logic debug_taken,
+        input debug_cause_t debug_cause,
+        output logic ebreak_into_debug,
         input logic dret,
         output logic [31:0] dpc,
-        output logic trigger_match_o,
+        output logic trigger_match,
 
         //TLB and MMU
         output logic instruction_translation_on,
@@ -372,7 +372,7 @@ generate if (CONFIG.MODES != BARE) begin : gen_csr_m_mode
     end
 
     //Exceptions that enter debug mode are not traps
-    assign trap_valid = exception_pkt.valid & ~debug_taken_i;
+    assign trap_valid = exception_pkt.valid & ~debug_taken;
 
     //Interrupt and Exception Delegation
     //Can delegate to supervisor if currently in supervisor or user modes
@@ -627,7 +627,7 @@ end
         dpc[1:0] <= '0;
         if (rst)
             dpc[31:2] <= '0;
-        else if (debug_taken_i & ~debug_mode_i)
+        else if (debug_taken & ~debug_mode)
             dpc[31:2] <= exception_pkt.pc[31:2];
     end
 
@@ -640,21 +640,21 @@ end
     always_ff @(posedge clk) begin
         if (rst)
             dcsr <= '{default:0, xdebugver:4, prv:MACHINE_PRIVILEGE};
-        else if (debug_taken_i & ~debug_mode_i) begin
-            dcsr.cause <= debug_cause_i;
+        else if (debug_taken & ~debug_mode) begin
+            dcsr.cause <= debug_cause;
             dcsr.prv <= privilege_level;
         end
-        else if (mwrite_en(DCSR) & debug_mode_i)
+        else if (mwrite_en(DCSR) & debug_mode)
             dcsr <= (dcsr & ~dcsr_mask) | (updated_csr & dcsr_mask);
     end
 
     //Ebreak enters debug mode instead of trapping when dcsr enables it for the current privilege
     always_comb begin
         case (privilege_level)
-            MACHINE_PRIVILEGE : ebreak_into_debug_o = dcsr.ebreakm;
-            SUPERVISOR_PRIVILEGE : ebreak_into_debug_o = dcsr.ebreaks;
-            USER_PRIVILEGE : ebreak_into_debug_o = dcsr.ebreaku;
-            default : ebreak_into_debug_o = 0;
+            MACHINE_PRIVILEGE : ebreak_into_debug = dcsr.ebreakm;
+            SUPERVISOR_PRIVILEGE : ebreak_into_debug = dcsr.ebreaks;
+            USER_PRIVILEGE : ebreak_into_debug = dcsr.ebreaku;
+            default : ebreak_into_debug = 0;
         endcase
     end
 
@@ -951,14 +951,14 @@ generate if (CONFIG.DEBUG.ENABLE & CONFIG.DEBUG.TRIGGER_ENABLE) begin : gen_csr_
     logic[CONFIG.DEBUG.NUM_TRIGGERS-1:0] tmatch_value_we;
 
     //Trigger comparison result
-    logic[CONFIG.DEBUG.NUM_TRIGGERS-1:0] trigger_match;
+    logic[CONFIG.DEBUG.NUM_TRIGGERS-1:0] tmatch_hit;
 
     //Write select
     //Trigger registers are only writable in debug mode
-    assign tselect_we = mwrite_en(TSELECT) & debug_mode_i;
+    assign tselect_we = mwrite_en(TSELECT) & debug_mode;
     for (genvar i = 0; i < CONFIG.DEBUG.NUM_TRIGGERS; i++) begin : gen_tmatch_we
-        assign tmatch_control_we[i] = (tselect == TSELECT_WIDTH'(i)) & mwrite_en(TDATA1) & debug_mode_i;
-        assign tmatch_value_we[i] = (tselect == TSELECT_WIDTH'(i)) & mwrite_en(TDATA2) & debug_mode_i;
+        assign tmatch_control_we[i] = (tselect == TSELECT_WIDTH'(i)) & mwrite_en(TDATA1) & debug_mode;
+        assign tmatch_value_we[i] = (tselect == TSELECT_WIDTH'(i)) & mwrite_en(TDATA2) & debug_mode;
     end
 
     //Registers
@@ -1028,15 +1028,15 @@ generate if (CONFIG.DEBUG.ENABLE & CONFIG.DEBUG.TRIGGER_ENABLE) begin : gen_csr_
     //Matches the issue stage PC, as fetch is speculative and the breakpoint must be taken before execution
     //gc_unit is responsible for waiting until the issue stage PC is no longer speculative (as with interrupts)
     for (genvar i = 0; i < CONFIG.DEBUG.NUM_TRIGGERS; i++) begin : gen_trigger_match
-        assign trigger_match[i] = tmatch_control[i] & issue_stage.stage_valid & (issue_stage.pc == tmatch_value[i]);
+        assign tmatch_hit[i] = tmatch_control[i] & issue_stage.stage_valid & (issue_stage.pc == tmatch_value[i]);
     end
-    assign trigger_match_o = |trigger_match;
+    assign trigger_match = |tmatch_hit;
 
 end else begin : gen_no_csr_debug_triggers
     assign tselect_rdata = '0;
     assign tmatch_control_rdata = '0;
     assign tmatch_value_rdata = '0;
-    assign trigger_match_o = 0;
+    assign trigger_match = 0;
 end
 endgenerate
 
@@ -1151,7 +1151,7 @@ generate if (CONFIG.MODES != BARE) begin : gen_csr_exceptions
             MEDELEG, MIDELEG, MEDELEGH : legal_access = CONFIG.MODES == MSU & privilege_level == MACHINE_PRIVILEGE; //Read write, needs supervisor
             [MSTATEEN0:MSTATEEN3], [MSTATEEN0H:MSTATEEN3H] : legal_access = CONFIG.CSRS.INCLUDE_SMSTATEEN & privilege_level == MACHINE_PRIVILEGE; //Read write, needs extension
             MCOUNTEREN, MENVCFG, MENVCFGH : legal_access = CONFIG.MODES inside {MU, MSU} & privilege_level == MACHINE_PRIVILEGE; //Read write, needs user
-            DCSR : legal_access = CONFIG.DEBUG.ENABLE & debug_mode_i; //Read write, debug mode only
+            DCSR : legal_access = CONFIG.DEBUG.ENABLE & debug_mode; //Read write, debug mode only
             TSELECT, TDATA1, TDATA2, TDATA3 : legal_access = CONFIG.DEBUG.ENABLE & CONFIG.DEBUG.TRIGGER_ENABLE & privilege_level == MACHINE_PRIVILEGE; //Read write, needs debug triggers 
             SSTATUS, SIE, STVEC, SCOUNTEREN, SSCRATCH, SEPC, SCAUSE, STVAL, SIP, SENVCFG : legal_access = CONFIG.MODES == MSU & privilege_level inside {MACHINE_PRIVILEGE, SUPERVISOR_PRIVILEGE}; //Read write
             SATP : legal_access = CONFIG.MODES == MSU & ((privilege_level == MACHINE_PRIVILEGE) | (privilege_level == SUPERVISOR_PRIVILEGE & ~mstatus.tvm)); //Read write, not TVM
