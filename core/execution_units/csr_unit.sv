@@ -372,8 +372,8 @@ generate if (CONFIG.MODES != BARE) begin : gen_csr_m_mode
             fflag_wmask_r <= fflag_wmask;
     end
 
-    //Exceptions that enter debug mode are not traps
-    assign trap_valid = exception_pkt.valid & ~debug_taken;
+    //Exceptions that enter debug mode or happen inside it are not traps
+    assign trap_valid = exception_pkt.valid & ~debug_taken & ~debug_mode;
 
     //Interrupt and Exception Delegation
     //Can delegate to supervisor if currently in supervisor or user modes

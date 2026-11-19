@@ -479,6 +479,8 @@ generate if (CONFIG.MODES != BARE || CONFIG.INCLUDE_IFENCE) begin :gen_gc_pc_ove
         gc_pc_override <= next_state inside {PRE_ISSUE_FLUSH, INIT_CLEAR_STATE};
         if (state == DBG_TAKEN)
             gc_pc <= CONFIG.DEBUG.HALT_ADDR;
+        else if (gc.exception.valid & debug_mode_q)
+            gc_pc <= CONFIG.DEBUG.EXCEPTION_ADDR;
         else if (gc.exception.valid | interrupt_taken)
             gc_pc <= exception_target_pc;
         else if (instruction_issued) begin
