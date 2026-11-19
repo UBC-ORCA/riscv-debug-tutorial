@@ -408,7 +408,6 @@ generate if (CONFIG.MODES != BARE) begin : gen_gc_m_mode
     assign gc.exception.code = exception_code[exception_source];
     assign gc.exception.tval = exception_tval[exception_source];
     assign gc.exception.pc = |exception_valid ? exception_pc[exception_source] : issue_stage.pc;
-    assign gc.exception.valid = |exception_valid;
     assign gc.exception.source = exception_valid;
 
     assign interrupt_taken = interrupt_pending & (state == WAIT_NO_EXCEPTION) & (next_state == PRE_ISSUE_FLUSH) & ~gc.exception.valid & ~csr_frontend_flush;
