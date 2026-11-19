@@ -412,7 +412,17 @@ generate if (CONFIG.MODES != BARE) begin : gen_gc_m_mode
 
     assign interrupt_taken = interrupt_pending & (state == WAIT_NO_EXCEPTION) & (next_state == PRE_ISSUE_FLUSH) & ~gc.exception.valid & ~csr_frontend_flush;
 
-    //Debug mode entry 
+    //Debug mode entry
+    //Set when an instruction issues outside debug mode with dcsr.step set, cleared when the first debug ROM instruction issues
+    assign do_single_step_d = instruction_issued ? ~debug_mode_q & debug_single_step : do_single_step_q;
+
+    always_ff @(posedge clk) begin
+        if (rst)
+            do_single_step_q <= 0;
+        else
+            do_single_step_q <= do_single_step_d;
+    end
+
     assign enter_debug_mode_prio_d = (debug_req | do_single_step_d) & ~debug_mode_q;
     assign enter_debug_mode = enter_debug_mode_prio_d | (trigger_match & ~debug_mode_q);
     assign debug_mode = debug_mode_q;

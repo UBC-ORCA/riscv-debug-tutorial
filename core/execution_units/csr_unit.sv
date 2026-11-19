@@ -73,6 +73,7 @@ module csr_unit
         output logic ebreak_into_debug,
         input logic dret,
         output logic [31:0] dpc,
+        output logic debug_single_step,
         output logic trigger_match,
 
         //TLB and MMU
@@ -647,6 +648,7 @@ end
         else if (mwrite_en(DCSR) & debug_mode)
             dcsr <= (dcsr & ~dcsr_mask) | (updated_csr & dcsr_mask);
     end
+    assign debug_single_step = dcsr.step;
 
     //Ebreak enters debug mode instead of trapping when dcsr enables it for the current privilege
     always_comb begin
