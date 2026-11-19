@@ -73,6 +73,8 @@ module gc_unit
         output logic debug_taken_o,
         output debug_cause_t debug_cause_o,
         input logic ebreak_into_debug_i,
+        output logic dret,
+        input logic [31:0] dpc,
         input logic debug_single_step_i,
         input logic trigger_match_i,
 
@@ -170,12 +172,14 @@ module gc_unit
     logic is_mret;
     logic is_sret;
     logic is_wfi;
+    logic is_dret;
 
     assign instruction = decode_stage.instruction;
 
     assign unit_needed =
         (CONFIG.MODES != BARE & instruction inside {MRET, WFI}) |
         (CONFIG.MODES == MSU & instruction inside {SRET, SFENCE_VMA}) |
+        (CONFIG.MODES != BARE & CONFIG.DEBUG.ENABLE & instruction inside {DRET}) | //DRET is always claimed, the GC exception makes it illegal outside debug mode
         (CONFIG.INCLUDE_IFENCE & instruction inside {FENCE_I});
     always_comb begin
         uses_rs = '0;
@@ -187,13 +191,14 @@ module gc_unit
     always_ff @(posedge clk) begin
         if (issue_stage_ready) begin
             is_ifence <= CONFIG.INCLUDE_IFENCE & instruction.upper_opcode[2];
-            is_sfence <= CONFIG.MODES == MSU & ~instruction.upper_opcode[2] & instruction.fn7[0];
+            is_sfence <= CONFIG.MODES == MSU & ~instruction.upper_opcode[2] & instruction.fn7[0] & ~instruction.fn7[2];
             trivial_sfence <= |instruction.rs1_addr;
             asid_sfence <= |instruction.rs2_addr;
             is_wfi <= CONFIG.MODES != BARE & ~instruction.upper_opcode[2] & ~instruction.fn7[0] & ~instruction.rs2_addr[1];
             //Ret instructions need exact decoding
             is_mret <= CONFIG.MODES != BARE & instruction inside {MRET};
             is_sret <= CONFIG.MODES == MSU & instruction inside {SRET};
+            is_dret <= CONFIG.MODES != BARE & CONFIG.DEBUG.ENABLE & instruction inside {DRET};
         end
     end
 
@@ -215,12 +220,14 @@ module gc_unit
             is_sfence_r <= 0;
             mret <= 0;
             sret <= 0;
+            dret <= 0;
         end
         else begin
             is_ifence_r <= issue.new_request & is_ifence & ~new_exception;
             is_sfence_r <= issue.new_request & is_sfence & ~new_exception;
             mret <= issue.new_request & is_mret & ~new_exception;
             sret <= issue.new_request & is_sret & ~new_exception;
+            dret <= issue.new_request & is_dret & ~new_exception;
         end  
     end
 
@@ -246,6 +253,7 @@ module gc_unit
                     new_exception = is_sfence | is_sret | is_mret;
                 else if (current_privilege == SUPERVISOR_PRIVILEGE)
                     new_exception = (is_sfence & tvm) | (is_sret & tsr);
+                new_exception |= is_dret & ~debug_mode_q; //DRET outside debug mode is illegal at any privilege
             end
         end
 
@@ -425,7 +433,7 @@ generate if (CONFIG.MODES != BARE) begin : gen_gc_m_mode
     assign debug_taken_o = (next_state == DBG_TAKEN); //One cycle pulse, csr_unit captures dpc while gc.exception.pc still selects the right PC
 
     //Debug mode register
-    assign debug_mode_d = debug_mode_q | (state == DBG_TAKEN);
+    assign debug_mode_d = (debug_mode_q | (state == DBG_TAKEN)) & ~dret;
 
     always_ff @(posedge clk) begin
         if (rst)
@@ -467,6 +475,8 @@ generate if (CONFIG.MODES != BARE || CONFIG.INCLUDE_IFENCE) begin :gen_gc_pc_ove
                 gc_pc <= mepc;
             else if (is_sret)
                 gc_pc <= sepc;
+            else if (is_dret)
+                gc_pc <= dpc;
             else //IFENCE, SFENCE, CSR flush
                 gc_pc <= constant_alu;
         end

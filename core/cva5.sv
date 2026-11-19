@@ -158,6 +158,8 @@ module cva5
     logic debug_taken;
     debug_cause_t debug_cause;
     logic ebreak_into_debug;
+    logic dret;
+    logic [31:0] dpc;
     logic trigger_match;
 
     //CSR broadcast info
@@ -521,6 +523,8 @@ module cva5
             .debug_taken_i(debug_taken),
             .debug_cause_i(debug_cause),
             .ebreak_into_debug_o(ebreak_into_debug),
+            .dret(dret),
+            .dpc(dpc),
             .trigger_match_o(trigger_match),
             .csr_frontend_flush(csr_frontend_flush),
             .instruction_translation_on(instruction_translation_on),
@@ -576,6 +580,8 @@ module cva5
         .debug_taken_o(debug_taken),
         .debug_cause_o(debug_cause),
         .ebreak_into_debug_i(ebreak_into_debug),
+        .dret(dret),
+        .dpc(dpc),
         .trigger_match_i(trigger_match),
         .load_store_status(load_store_status)
     );

@@ -157,6 +157,9 @@ package opcodes;
     localparam [31:0] SFENCE_VMA = 32'b0001001??????????000000001110011;
     localparam [31:0] WFI = 32'b00010000010100000000000001110011;
 
+    //Debug
+    localparam [31:0] DRET = 32'b01111011001000000000000001110011;
+
     //Cache
     localparam [31:0] CBO_INVAL = 32'b000000000000?????010000000001111;
     localparam [31:0] CBO_CLEAN = 32'b000000000001?????010000000001111;

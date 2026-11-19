@@ -71,6 +71,8 @@ module csr_unit
         input logic debug_taken_i,
         input debug_cause_t debug_cause_i,
         output logic ebreak_into_debug_o,
+        input logic dret,
+        output logic [31:0] dpc,
         output logic trigger_match_o,
 
         //TLB and MMU
@@ -322,7 +324,6 @@ module csr_unit
 
     //Debug Registers
     dcsr_t dcsr;
-    logic[31:0] dpc;
     logic[31:0] dscratch0;
     logic[31:0] dscratch1;
 
@@ -401,6 +402,8 @@ generate if (CONFIG.MODES != BARE) begin : gen_csr_m_mode
     always_ff @(posedge clk) begin
         if (rst)
             privilege_level <= MACHINE_PRIVILEGE;
+        else if (dret) //Return to the privilege level saved on debug entry
+            privilege_level <= dcsr.prv;
         else
             privilege_level <= next_privilege_level;
     end
