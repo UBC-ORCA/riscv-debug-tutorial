@@ -324,10 +324,11 @@ module gc_unit
                     next_state = ebreak_to_debug ? DBG_TAKEN : PRE_ISSUE_FLUSH;
                 else if (~interrupt_pending & ~enter_debug_mode) //Something cancelled the interrupt and no halt is pending
                     next_state = IDLE_STATE;
-                else if (~possible_exception & issue_stage.stage_valid & ~branch_flush) //Safe point: no more possible exceptions and issue stage has correct PC, only now can the interrupt or halt be served
+                else if (~possible_exception & issue_stage.stage_valid & ~branch_flush) //No more possible exceptions and issue stage has correct PC
                     next_state = enter_debug_mode ? DBG_TAKEN : PRE_ISSUE_FLUSH; //Halt wins over interrupt
             end
             //Debug entry: set debug mode, then reuse PRE_ISSUE_FLUSH to redirect fetch
+            //Separate from the trap path: loads the debug ROM address and sets debug mode
             DBG_TAKEN : next_state = PRE_ISSUE_FLUSH;
             PRE_ISSUE_FLUSH : begin
                 if (is_sfence_r)
@@ -429,17 +430,17 @@ generate if (CONFIG.MODES != BARE) begin : gen_gc_m_mode
     //Ebreak goes to the debug ROM instead of trapping: re-entry in debug mode, or entry when dcsr enables it
     assign ebreak_to_debug = exception_valid[PRE_ISSUE_EXCEPTION] & (gc.exception.code == BREAK) & (debug_mode_q | ebreak_into_debug);
 
-    //Debug cause for dcsr, sampled by csr_unit with debug_taken, highest spec priority first
     always_comb begin
         if (trigger_match)
-            debug_cause = DBG_CAUSE_TRIGGER;
+            debug_cause = DBG_CAUSE_TRIGGER; //Priority 4, highest
         else if (ebreak_to_debug)
-            debug_cause = DBG_CAUSE_EBREAK;
+            debug_cause = DBG_CAUSE_EBREAK; //Priority 3
         else if (debug_req)
-            debug_cause = DBG_CAUSE_HALTREQ;
+            debug_cause = DBG_CAUSE_HALTREQ; //Priority 1
         else
-            debug_cause = DBG_CAUSE_STEP;
+            debug_cause = DBG_CAUSE_STEP; //Priority 0, lowest
     end
+
     assign debug_taken = (next_state == DBG_TAKEN); //One cycle pulse, csr_unit captures dpc while gc.exception.pc still selects the right PC
 
     //Debug mode register
