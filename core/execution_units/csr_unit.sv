@@ -643,7 +643,7 @@ end
 
     always_ff @(posedge clk) begin
         if (rst)
-            dcsr <= '{default:0, xdebugver:4, prv:MACHINE_PRIVILEGE};
+            dcsr <= '{default:0, xdebugver:4, cause:DBG_CAUSE_NONE, prv:MACHINE_PRIVILEGE};
         else if (debug_taken & ~debug_mode) begin
             dcsr.cause <= debug_cause;
             dcsr.prv <= privilege_level;
