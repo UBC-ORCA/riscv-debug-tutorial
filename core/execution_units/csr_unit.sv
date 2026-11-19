@@ -626,13 +626,16 @@ end
     ////////////////////////////////////////////////////
     //DPC
     //Written on debug entry with the next instruction PC
-    //or the ebreak PC.  Lower two bits tied to zero.
+    //or the ebreak PC.  Debugger can write it in debug mode.
+    //Lower two bits tied to zero.
     always_ff @(posedge clk) begin
         dpc[1:0] <= '0;
         if (rst)
             dpc[31:2] <= '0;
         else if (debug_taken & ~debug_mode)
             dpc[31:2] <= exception_pkt.pc[31:2];
+        else if (mwrite_en(DPC) & debug_mode)
+            dpc[31:2] <= updated_csr[31:2];
     end
 
     ////////////////////////////////////////////////////
@@ -661,6 +664,23 @@ end
             USER_PRIVILEGE : ebreak_into_debug = dcsr.ebreaku;
             default : ebreak_into_debug = 0;
         endcase
+    end
+
+    ////////////////////////////////////////////////////
+    //DSCRATCH0 and DSCRATCH1
+    //Scratch registers for the debug ROM, debug mode only
+    always_ff @(posedge clk) begin
+        if (rst)
+            dscratch0 <= '0;
+        else if (mwrite_en(DSCRATCH0) & debug_mode)
+            dscratch0 <= updated_csr;
+    end
+
+    always_ff @(posedge clk) begin
+        if (rst)
+            dscratch1 <= '0;
+        else if (mwrite_en(DSCRATCH1) & debug_mode)
+            dscratch1 <= updated_csr;
     end
 
     ////////////////////////////////////////////////////
@@ -1156,7 +1176,7 @@ generate if (CONFIG.MODES != BARE) begin : gen_csr_exceptions
             MEDELEG, MIDELEG, MEDELEGH : legal_access = CONFIG.MODES == MSU & privilege_level == MACHINE_PRIVILEGE; //Read write, needs supervisor
             [MSTATEEN0:MSTATEEN3], [MSTATEEN0H:MSTATEEN3H] : legal_access = CONFIG.CSRS.INCLUDE_SMSTATEEN & privilege_level == MACHINE_PRIVILEGE; //Read write, needs extension
             MCOUNTEREN, MENVCFG, MENVCFGH : legal_access = CONFIG.MODES inside {MU, MSU} & privilege_level == MACHINE_PRIVILEGE; //Read write, needs user
-            DCSR : legal_access = CONFIG.DEBUG.ENABLE & debug_mode; //Read write, debug mode only
+            DCSR, DPC, DSCRATCH0, DSCRATCH1 : legal_access = CONFIG.DEBUG.ENABLE & debug_mode; //Read write, debug mode only
             TSELECT, TDATA1, TDATA2, TDATA3 : legal_access = CONFIG.DEBUG.ENABLE & CONFIG.DEBUG.TRIGGER_ENABLE & privilege_level == MACHINE_PRIVILEGE; //Read write, needs debug triggers 
             SSTATUS, SIE, STVEC, SCOUNTEREN, SSCRATCH, SEPC, SCAUSE, STVAL, SIP, SENVCFG : legal_access = CONFIG.MODES == MSU & privilege_level inside {MACHINE_PRIVILEGE, SUPERVISOR_PRIVILEGE}; //Read write
             SATP : legal_access = CONFIG.MODES == MSU & ((privilege_level == MACHINE_PRIVILEGE) | (privilege_level == SUPERVISOR_PRIVILEGE & ~mstatus.tvm)); //Read write, not TVM
@@ -1274,6 +1294,9 @@ endgenerate
             MSTATEEN3H : selected_csr = CONFIG.MODES != BARE & CONFIG.CSRS.INCLUDE_SMSTATEEN ? mstateen3h : '0;
             //Debug
             DCSR : selected_csr = CONFIG.DEBUG.ENABLE ? dcsr : '0;
+            DPC : selected_csr = CONFIG.DEBUG.ENABLE ? dpc : '0;
+            DSCRATCH0 : selected_csr = CONFIG.DEBUG.ENABLE ? dscratch0 : '0;
+            DSCRATCH1 : selected_csr = CONFIG.DEBUG.ENABLE ? dscratch1 : '0;
             //Debug triggers
             TSELECT : selected_csr = CONFIG.DEBUG.ENABLE & CONFIG.DEBUG.TRIGGER_ENABLE ? tselect_rdata : '0;
             TDATA1 : selected_csr = CONFIG.DEBUG.ENABLE & CONFIG.DEBUG.TRIGGER_ENABLE ? tmatch_control_rdata : '0;
