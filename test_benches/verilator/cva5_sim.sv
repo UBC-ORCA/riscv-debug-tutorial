@@ -112,6 +112,7 @@ module cva5_sim
     //Additional CPU signals
     interrupt_t s_interrupt;
     interrupt_t m_interrupt;
+    logic debug_req;
     logic[63:0] mtime;
 
     ////////////////////////////////////////////////////
@@ -171,6 +172,7 @@ module cva5_sim
     //Other CPU signals
     assign s_interrupt = '{default: 0};
     assign m_interrupt = '{default: 0};
+    assign debug_req = 0;
 
     always_ff @(posedge clk) begin
         if (rst)

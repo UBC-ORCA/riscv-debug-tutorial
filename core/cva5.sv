@@ -50,7 +50,9 @@ module cva5
 
         input logic [63:0] mtime,
         input interrupt_t s_interrupt,
-        input interrupt_t m_interrupt
+        input interrupt_t m_interrupt,
+
+        input logic debug_req
     );
 
     ////////////////////////////////////////////////////
@@ -584,6 +586,7 @@ module cva5
         .ebreak_into_debug(ebreak_into_debug),
         .dret(dret),
         .dpc(dpc),
+        .debug_req(debug_req),
         .debug_single_step(debug_single_step),
         .trigger_match(trigger_match),
         .load_store_status(load_store_status)

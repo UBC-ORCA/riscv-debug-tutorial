@@ -73,6 +73,7 @@ module cva5_wrapper
     logic[63:0] mtime;
     interrupt_t s_interrupt; //Unused
     interrupt_t m_interrupt; //Unused
+    logic debug_req; //Unused
 
     ////////////////////////////////////////////////////
     //Implementation
@@ -215,6 +216,7 @@ module cva5_wrapper
 
     assign s_interrupt = '{default: '0};
     assign m_interrupt = '{default: '0};
+    assign debug_req = 0;
 
     //AXI peripheral mapping; ID widths are missmatched but unused
     assign m_axi.arready = m_axi_arready;

@@ -248,6 +248,7 @@ module litex_wrapper
             .mtime(mtime),
             .s_interrupt(s_interrupt[i]),
             .m_interrupt(m_interrupt[i]),
+            .debug_req(1'b0),
         .*);
 
     end endgenerate
