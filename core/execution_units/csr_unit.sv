@@ -606,6 +606,9 @@ end
         //S interrupts
         if (CONFIG.MODES == MSU & ((privilege_level == SUPERVISOR_PRIVILEGE & mstatus.sie) | privilege_level == USER_PRIVILEGE))
             interrupt_pending |= |(sip & sie);
+        //Debug mode masks all interrupts, single step does too since dcsr.stepie is hardwired to 0
+        if (debug_mode | dcsr.step)
+            interrupt_pending = 0;
     end
 
     ////////////////////////////////////////////////////
