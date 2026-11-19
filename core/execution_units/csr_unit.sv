@@ -639,7 +639,7 @@ end
     //DCSR
     //Cause and prv written on debug entry.  Debugger can
     //write the ebreak enables, step and prv in debug mode.
-    localparam dcsr_t dcsr_mask = '{default:0, ebreakm:1, ebreaks:CONFIG.MODES == MSU, ebreaku:CONFIG.MODES inside {MU, MSU}, step:1, prv:'1};
+    localparam dcsr_t dcsr_mask = '{default:0, ebreakm:1, ebreaks:CONFIG.MODES == MSU, ebreaku:CONFIG.MODES inside {MU, MSU}, step:1, prv:privilege_t'('1)};
 
     always_ff @(posedge clk) begin
         if (rst)
