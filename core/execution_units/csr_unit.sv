@@ -403,6 +403,8 @@ generate if (CONFIG.MODES != BARE) begin : gen_csr_m_mode
     always_ff @(posedge clk) begin
         if (rst)
             privilege_level <= MACHINE_PRIVILEGE;
+        else if (debug_taken & ~debug_mode) //Debug mode runs at machine privilege, dcsr.prv keeps the old level
+            privilege_level <= MACHINE_PRIVILEGE;
         else if (dret) //Return to the privilege level saved on debug entry
             privilege_level <= dcsr.prv;
         else
@@ -644,6 +646,14 @@ end
     //write the ebreak enables, step and prv in debug mode.
     localparam dcsr_t dcsr_mask = '{default:0, ebreakm:1, ebreaks:CONFIG.MODES == MSU, ebreaku:CONFIG.MODES inside {MU, MSU}, step:1, prv:privilege_t'('1)};
 
+    //A written prv the hart does not support falls back to machine mode, like mstatus.mpp
+    dcsr_t dcsr_written;
+    always_comb begin
+        dcsr_written = (dcsr & ~dcsr_mask) | (updated_csr & dcsr_mask);
+        if (CONFIG.MODES == M | (CONFIG.MODES == MU & ^dcsr_written.prv) | dcsr_written.prv == RESERVED_PRIVILEGE)
+            dcsr_written.prv = MACHINE_PRIVILEGE;
+    end
+
     always_ff @(posedge clk) begin
         if (rst)
             dcsr <= '{default:0, xdebugver:4, cause:DBG_CAUSE_NONE, prv:MACHINE_PRIVILEGE};
@@ -652,7 +662,7 @@ end
             dcsr.prv <= privilege_level;
         end
         else if (mwrite_en(DCSR) & debug_mode)
-            dcsr <= (dcsr & ~dcsr_mask) | (updated_csr & dcsr_mask);
+            dcsr <= dcsr_written;
     end
     assign debug_single_step = dcsr.step;
 
@@ -817,7 +827,7 @@ endgenerate
 
     //TLB status --- used to mux physical/virtual address
     assign instruction_translation_on = CONFIG.MODES == MSU & satp.mode & privilege_level != MACHINE_PRIVILEGE;
-    assign data_translation_on = CONFIG.MODES == MSU & satp.mode & (privilege_level != MACHINE_PRIVILEGE | (mstatus.mprv & mstatus.mpp != MACHINE_PRIVILEGE));
+    assign data_translation_on = CONFIG.MODES == MSU & satp.mode & (privilege_level != MACHINE_PRIVILEGE | (mstatus.mprv & ~debug_mode & mstatus.mpp != MACHINE_PRIVILEGE));
     assign asid = satp.asid;
     //******************
 
@@ -829,7 +839,7 @@ generate if (CONFIG.MODES == MSU) begin : gen_csr_s_mode
     assign immu.sum = mstatus.sum;
     assign dmmu.sum = mstatus.sum;
     assign immu.privilege = privilege_level;
-    assign dmmu.privilege = mstatus.mprv ? privilege_t'(mstatus.mpp) : privilege_level;
+    assign dmmu.privilege = (mstatus.mprv & ~debug_mode) ? privilege_t'(mstatus.mpp) : privilege_level; //dcsr.mprven is 0, so MPRV is ignored in debug mode
     assign immu.satp_ppn = satp.ppn;
     assign dmmu.satp_ppn = satp.ppn;
     ////////////////////////////////////////////////////
