@@ -17,7 +17,7 @@
 
 # Introduction
 
-> This tutorial explains the complete hardware and software debug chain for a RISC-V soft core, from GDB down to the CPU signals, using the [CV32E20 RISC-V Core](https://github.com/openhwgroup/cve2/tree/main) as a reference. A separate section covers what a simpler educational CPU like the DDCA core would need to support the debug infrastructure.
+> This tutorial explains the complete hardware and software debug chain for a RISC-V soft core, from GDB down to the CPU signals, using the [CV32E20 RISC-V Core](https://github.com/openhwgroup/cve2/tree/main) as a reference. A separate section covers what a simpler educational CPU like the DDCA core would need to support the debug infrastructure, and a final section shows how the same debug support was added to [CVA5](https://github.com/openhwgroup/cva5), a deeper FPGA-oriented pipeline.
 
 ---
 ## Why Do We Need a CPU Debugger?
