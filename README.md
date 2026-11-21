@@ -953,16 +953,7 @@ assign ReadData = dm_sel ? dm_rdata : mem_rdata;
 ----
 ## What Stays the Same
 
-The key observation is that only the CPU core needs to be modified to support debug. The rest of the debug stack — riscv-dbg, the Debug ROM, OpenOCD, and GDB — remains unchanged. The Debug Module interacts with the CPU in exactly the same way regardless of the internal CPU design, so it does not care whether the CPU is single-cycle (DDCA) or pipelined (CVE2).
-
-To support debug, we extended the ISA with:
-
-- CSR instructions: `csrrw`, `csrrs`, `csrrc`
-- Debug control instructions:
-    - `ebreak` — used to re-enter debug mode from software
-    - `dret` — used to exit debug mode and resume execution
-
-These additions are sufficient for the Debug ROM and Program Buffer to function correctly.
+Apart from routing the Debug Module's address range on the memory bus, the debug changes are all inside the CPU core. riscv-dbg, the Debug ROM, OpenOCD and GDB stay the same, because the Debug Module talks to every core through the same interface, whether it is single-cycle like DDCA or pipelined like CVE2 and CVA5.
 
 ## Limitations of This Implementation
 
