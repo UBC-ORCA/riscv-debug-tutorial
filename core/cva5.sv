@@ -52,7 +52,8 @@ module cva5
         input interrupt_t s_interrupt,
         input interrupt_t m_interrupt,
 
-        input logic debug_req
+        input logic debug_req,
+        output logic debug_halted
     );
 
     ////////////////////////////////////////////////////
@@ -591,6 +592,9 @@ module cva5
         .trigger_match(trigger_match),
         .load_store_status(load_store_status)
     );
+
+    //Debug mode status for the board or testbench
+    assign debug_halted = debug_mode;
 
     generate if (CONFIG.INCLUDE_UNIT.MUL) begin : gen_mul
         mul_unit mul_unit_block (

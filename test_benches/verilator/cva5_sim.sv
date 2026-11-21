@@ -113,6 +113,7 @@ module cva5_sim
     interrupt_t s_interrupt;
     interrupt_t m_interrupt;
     logic debug_req;
+    logic debug_halted;
     logic[63:0] mtime;
 
     ////////////////////////////////////////////////////

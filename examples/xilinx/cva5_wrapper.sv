@@ -74,6 +74,7 @@ module cva5_wrapper
     interrupt_t s_interrupt; //Unused
     interrupt_t m_interrupt; //Unused
     logic debug_req; //Unused
+    logic debug_halted; //Unused
 
     ////////////////////////////////////////////////////
     //Implementation
