@@ -980,6 +980,7 @@ For full compliance, additional features defined in the [RISC-V Debug Specificat
 - [CVE2 GitHub Repository](https://github.com/openhwgroup/cve2)
 - [CVE2 User Manual](https://docs.openhwgroup.org/projects/cve2-user-manual/en/latest/)
 - [CVA5 GitHub Repository](https://github.com/openhwgroup/cva5)
+- [Taiga: A Configurable RISC-V Soft-Processor Framework for Heterogeneous Computing Systems Research — Matthews and Shannon, CARRV 2017](https://carrv.github.io/2017/papers/matthews-taiga-carrv2017.pdf)
 - [PULP riscv-dbg](https://github.com/pulp-platform/riscv-dbg)
 - [RISC-V OpenOCD Fork](https://github.com/riscv-collab/riscv-openocd)
 - [BoxLambda Project](https://github.com/epsilon537/boxlambda)
