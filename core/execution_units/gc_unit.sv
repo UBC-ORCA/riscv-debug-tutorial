@@ -414,7 +414,8 @@ generate if (CONFIG.MODES != BARE) begin : gen_gc_m_mode
 
     //Debug mode entry
     //Set when an instruction issues outside debug mode with dcsr.step set, cleared when the first debug ROM instruction issues
-    assign do_single_step_d = instruction_issued ? ~debug_mode_q & debug_single_step : do_single_step_q;
+    //Ecall, illegal and fetch faults trap at issue without issuing, so a pre-issue exception also counts as the stepped instruction
+    assign do_single_step_d = (instruction_issued | exception_valid[PRE_ISSUE_EXCEPTION]) ? ~debug_mode_q & debug_single_step : do_single_step_q;
 
     always_ff @(posedge clk) begin
         if (rst)
