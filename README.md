@@ -10,7 +10,8 @@
 6. [Debug Host Software](#debug-host-software)
 7. [End-to-End Debug Flow](#end-to-end-debug-flow)
 8. [What the DDCA CPU Would Need](#what-the-ddca-cpu-would-need)
-9. [References](#references)
+9. [Adding Debug to CVA5](#adding-debug-to-cva5)
+10. [References](#references)
 
 ---
 
