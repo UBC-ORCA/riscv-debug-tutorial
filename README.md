@@ -53,6 +53,7 @@ This tutorial covers:
 - The roles of the Debug Module, Debug Transport Module, and Debug Module Interface
 - How GDB and OpenOCD connect to a RISC-V soft core
 - What a simple educational CPU would need to add to support debug
+- How debug was added to CVA5, a core with parallel, variable-latency execution units
 
 _This tutorial does not cover:_
 
