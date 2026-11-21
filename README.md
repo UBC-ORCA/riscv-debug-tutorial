@@ -979,6 +979,7 @@ For full compliance, additional features defined in the [RISC-V Debug Specificat
 - [RISC-V External Debug Support Specification v0.13.2](https://github.com/riscv/riscv-debug-spec)
 - [CVE2 GitHub Repository](https://github.com/openhwgroup/cve2)
 - [CVE2 User Manual](https://docs.openhwgroup.org/projects/cve2-user-manual/en/latest/)
+- [CVA5 GitHub Repository](https://github.com/openhwgroup/cva5)
 - [PULP riscv-dbg](https://github.com/pulp-platform/riscv-dbg)
 - [RISC-V OpenOCD Fork](https://github.com/riscv-collab/riscv-openocd)
 - [BoxLambda Project](https://github.com/epsilon537/boxlambda)
