@@ -970,6 +970,10 @@ For full compliance, additional features defined in the [RISC-V Debug Specificat
 
 ---
 
+# Adding Debug to CVA5
+
+[CVA5](https://github.com/openhwgroup/cva5) is the OpenHW Group's pipelined, FPGA-oriented RV32 core. This section explains how the core was extended to support run-control debug.
+
 # References
 
 - [RISC-V External Debug Support Specification v0.13.2](https://github.com/riscv/riscv-debug-spec)
