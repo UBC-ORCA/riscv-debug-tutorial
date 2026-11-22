@@ -992,6 +992,10 @@ The rest of this section follows a halt from start to finish: entering Debug Mod
 - [`core/execution_units/gc_unit.sv`](https://github.com/openhwgroup/cva5/blob/master/core/execution_units/gc_unit.sv): the global controller. Debug entry, `dret`, single step, and the fetch redirect.
 - [`core/execution_units/csr_unit.sv`](https://github.com/openhwgroup/cva5/blob/master/core/execution_units/csr_unit.sv): the CSR file. Debug CSRs, privilege changes, and blocking trap updates in Debug Mode.
 
+## Entering Debug Mode
+
+The global controller (`gc_unit`) is the closest thing CVA5 has to CVE2's controller, but it only steps in for events that need the whole pipeline: exceptions, interrupts, `mret`/`sret`, `fence.i` and some CSR writes. It does this with a small state machine. Debug entry adds one new state, `DBG_TAKEN`, and reuses everything else, as the state diagram below shows.
+
 ### What Can Cause Entry
 
 The spec (v0.13.2) lists five causes for entering Debug Mode: a halt request, a single step, a hardware breakpoint (trigger), an `ebreak` and a reset halt request. CVE2 implements the first four, and since it is our reference, CVA5 does too. The fifth is covered in [Future Improvements](#future-improvements).
