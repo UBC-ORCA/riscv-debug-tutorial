@@ -974,6 +974,20 @@ For full compliance, additional features defined in the [RISC-V Debug Specificat
 
 [CVA5](https://github.com/openhwgroup/cva5) is the OpenHW Group's pipelined, FPGA-oriented RV32 core. This section explains how the core was extended to support run-control debug.
 
+### Finding a Clean Instruction Boundary
+
+The spec defines `dpc` as the address of *the next instruction to be executed* (Section 4.8.2). In CVA5, parallel execution units leave many instructions in flight, so that address isn't known right away. If an older instruction faults, the next instruction is the trap handler, not the one waiting in issue.
+
+CVA5 already solves exactly this problem for interrupts. An interrupt waits in `WAIT_NO_EXCEPTION`, with issue held, until no older instruction can still raise an exception. Halt entry follows the same path:
+
+![Debug entry in the CVA5 GC state machine](./docs/images/gc_unit_fsm.png)
+
+While the FSM waits here, one of three things ends the wait. The numbers match the diagram and give the order of the checks, so (1) wins if several are true.
+
+- **(3) The pipeline drains (the normal case).** No instruction in flight can still fault, branch mispredictions are resolved, and an instruction is waiting in issue (`~possible_exception & ~branch_flush & issue_stage.stage_valid`). That instruction is the next one to run, so `issue_stage.pc` is the correct `dpc`. The FSM moves to `DBG_TAKEN`, even if an interrupt is also pending. An interrupt on its own still goes to `PRE_ISSUE_FLUSH`.
+- **(1) An exception or CSR flush arrives first.** It overrides the pending halt and goes to `PRE_ISSUE_FLUSH`. The exception to this is an `ebreak` that should enter Debug Mode (`ebreak_to_debug`), which goes straight to `DBG_TAKEN`.
+- **(2) Nothing is pending anymore.** With no interrupt or halt left to take, the FSM returns to `IDLE`.
+
 # References
 
 - [RISC-V External Debug Support Specification v0.13.2](https://github.com/riscv/riscv-debug-spec)
