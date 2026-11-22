@@ -987,6 +987,29 @@ assign enter_debug_mode = enter_debug_mode_prio_d | (trigger_match & ~debug_mode
 
 `ebreak` is handled separately, because it is an instruction in the program and arrives as an exception.
 
+### When Does `ebreak` Enter Debug Mode?
+
+By default it does not. The RISC-V privileged spec defines `ebreak` as a breakpoint exception: the CPU traps to `mtvec`, the program's own exception handler, like any other fault. No debugger is involved.
+
+An `ebreak` goes to Debug Mode instead in only two cases:
+
+1. **The hart is already in Debug Mode.** The Debug Module ends every Program Buffer and abstract command with an `ebreak`, which means "command done, go back to the park loop".
+2. **The debugger enabled it with a `dcsr` bit.** There is one bit per privilege level:
+
+| Bit       | Applies when the `ebreak` runs in |
+| --------- | --------------------------------- |
+| `ebreakm` | M-mode (machine)                  |
+| `ebreaks` | S-mode (supervisor)               |
+| `ebreaku` | U-mode (user)                     |
+
+This is how GDB software breakpoints work. GDB replaces an instruction with an `ebreak` and sets, for example, `ebreakm = 1`. When the program reaches it, the hart halts into the debugger instead of jumping to the program's exception handler.
+
+In the code, these are the two terms in the brackets. `ebreak_into_debug` is the `dcsr` bit for the current privilege level:
+
+```systemverilog
+assign ebreak_to_debug = exception_valid[PRE_ISSUE_EXCEPTION] & (gc.exception.code == BREAK) & (debug_mode_q | ebreak_into_debug);
+```
+
 ### Finding a Clean Instruction Boundary
 
 The spec defines `dpc` as the address of *the next instruction to be executed* (Section 4.8.2). In CVA5, parallel execution units leave many instructions in flight, so that address isn't known right away. If an older instruction faults, the next instruction is the trap handler, not the one waiting in issue.
