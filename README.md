@@ -988,6 +988,26 @@ While the FSM waits here, one of three things ends the wait. The numbers match t
 - **(1) An exception or CSR flush arrives first.** It overrides the pending halt and goes to `PRE_ISSUE_FLUSH`. The exception to this is an `ebreak` that should enter Debug Mode (`ebreak_to_debug`), which goes straight to `DBG_TAKEN`.
 - **(2) Nothing is pending anymore.** With no interrupt or halt left to take, the FSM returns to `IDLE`.
 
+### Choosing the `dpc` Value
+
+A hart enters Debug Mode in two different ways, and `dpc` points to a different address for each case (spec Section 4.8.2):
+
+| Entry | Caused by | `dpc` points to |
+|---|---|---|
+| Halt request, single step, trigger | The debugger, from outside | The next instruction, not yet executed |
+| `ebreak` | An instruction in the program, e.g. a GDB software breakpoint | The `ebreak` itself |
+
+CVE2 uses two FSM states for this, `DBG_TAKEN_IF` and `DBG_TAKEN_ID`, which save the PC from different pipeline stages. The debug logic added to CVA5 needs only one state, because the global controller already has a mux that picks the right PC:
+
+```systemverilog
+assign gc.exception.pc = |exception_valid ? exception_pc[exception_source] : issue_stage.pc;
+```
+
+<img src="./docs/images/gc_exception_pc_mux.png" alt="The gc.exception.pc mux" width="450">
+
+- **Halt request:** no exception is valid, so the mux falls through to `issue_stage.pc`, the next instruction.
+- **`ebreak`:** the `ebreak` is an exception from the issue stage, so the mux selects the PC of the `ebreak` itself.
+
 # References
 
 - [RISC-V External Debug Support Specification v0.13.2](https://github.com/riscv/riscv-debug-spec)
