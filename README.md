@@ -987,6 +987,11 @@ The debug logic from DDCA and CVE2 cannot be copied into CVA5 as is, for three r
 - **Fetch is speculative.** CVA5 has a branch predictor, so `dpc` must come from the issue stage, not from the fetch PC.
 - **Control is spread out.** No CVE2-style controller sequences every instruction. The global controller (`gc_unit`) only handles pipeline-wide events, so debug entry has to fit into its existing hold, flush and PC-override model.
 
+The rest of this section follows a halt from start to finish: entering Debug Mode, running inside it, and leaving it. Single step and hardware breakpoints then build on that same path. Almost all of the changes are in two files:
+
+- [`core/execution_units/gc_unit.sv`](https://github.com/openhwgroup/cva5/blob/master/core/execution_units/gc_unit.sv): the global controller. Debug entry, `dret`, single step, and the fetch redirect.
+- [`core/execution_units/csr_unit.sv`](https://github.com/openhwgroup/cva5/blob/master/core/execution_units/csr_unit.sv): the CSR file. Debug CSRs, privilege changes, and blocking trap updates in Debug Mode.
+
 ### What Can Cause Entry
 
 The spec (v0.13.2) lists five causes for entering Debug Mode: a halt request, a single step, a hardware breakpoint (trigger), an `ebreak` and a reset halt request. CVE2 implements the first four, and since it is our reference, CVA5 does too. The fifth is covered in [Future Improvements](#future-improvements).
