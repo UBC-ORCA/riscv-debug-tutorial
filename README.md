@@ -1016,6 +1016,18 @@ assign gc.exception.pc = |exception_valid ? exception_pc[exception_source] : iss
 DCSR, DPC, DSCRATCH0, DSCRATCH1 : legal_access = CONFIG.DEBUG.ENABLE & debug_mode; //Read write, debug mode only
 ```
 
+### Exceptions Inside Debug Mode
+
+An exception in Debug Mode, for example a bad load in the Program Buffer, must not update any registers (`mepc`, `mcause`, `mtval`, `mstatus`, `dpc`), and must jump to the Debug Module's exception entry instead of `mtvec` (spec Section 4.1).
+
+`csr_unit` already gates every trap update with one signal, `trap_valid`. Masking that signal is enough to block all of them:
+
+```systemverilog
+assign trap_valid = exception_pkt.valid & ~debug_taken & ~debug_mode;
+```
+
+An `ebreak` that enters Debug Mode is still an exception, so the `~debug_taken` term stops it from overwriting the program's trap CSRs.
+
 # References
 
 - [RISC-V External Debug Support Specification v0.13.2](https://github.com/riscv/riscv-debug-spec)
