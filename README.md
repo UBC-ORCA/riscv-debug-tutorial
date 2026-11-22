@@ -974,6 +974,19 @@ For full compliance, additional features defined in the [RISC-V Debug Specificat
 
 [CVA5](https://github.com/openhwgroup/cva5) is the OpenHW Group's pipelined, FPGA-oriented RV32 core. This section explains how the core was extended to support run-control debug.
 
+### What Can Cause Entry
+
+The spec (v0.13.2) lists five causes for entering Debug Mode: a halt request, a single step, a hardware breakpoint (trigger), an `ebreak` and a reset halt request. CVE2 implements the first four, and since it is our reference, CVA5 does too. The fifth is covered in [Future Improvements](#future-improvements).
+
+Of the four, the first three share one signal. The halt request logic is carried over from CVE2, and [Single Step](#single-step) and [Hardware Breakpoints](#hardware-breakpoints) are covered later:
+
+```systemverilog
+assign enter_debug_mode_prio_d = (debug_req | do_single_step_d) & ~debug_mode_q;
+assign enter_debug_mode = enter_debug_mode_prio_d | (trigger_match & ~debug_mode_q);
+```
+
+`ebreak` is handled separately, because it is an instruction in the program and arrives as an exception.
+
 ### Finding a Clean Instruction Boundary
 
 The spec defines `dpc` as the address of *the next instruction to be executed* (Section 4.8.2). In CVA5, parallel execution units leave many instructions in flight, so that address isn't known right away. If an older instruction faults, the next instruction is the trap handler, not the one waiting in issue.
