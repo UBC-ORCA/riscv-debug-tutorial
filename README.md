@@ -1005,6 +1005,8 @@ CVA5 already had the CSR instructions (`csrrw`, `csrrs`, `csrrc`), so the Debug 
 
 The diagram below shows where the changes sit in the pipeline. Only `gc_unit` and `csr_unit` change. Fetch, decode, issue and the other execution units are untouched. Debug entry and `dret` reach fetch through the existing `gc_pc` override path.
 
+![CVA5 pipeline with the modules changed to add debug mode](./docs/images/cva5_debug_pipeline.png)
+
 The rest of this section follows a halt from start to finish: entering Debug Mode, running inside it, and leaving it. Single step and hardware breakpoints then build on that same path. Almost all of the changes are in two files:
 
 - [`core/execution_units/gc_unit.sv`](https://github.com/openhwgroup/cva5/blob/master/core/execution_units/gc_unit.sv): the global controller. Debug entry, `dret`, single step, and the fetch redirect.
