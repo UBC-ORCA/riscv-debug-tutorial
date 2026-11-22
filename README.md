@@ -987,6 +987,24 @@ The debug logic from DDCA and CVE2 cannot be copied into CVA5 as is, for three r
 - **Fetch is speculative.** CVA5 has a branch predictor, so `dpc` must come from the issue stage, not from the fetch PC.
 - **Control is spread out.** No CVE2-style controller sequences every instruction. The global controller (`gc_unit`) only handles pipeline-wide events, so debug entry has to fit into its existing hold, flush and PC-override model.
 
+## What Was Added to CVA5
+
+To support the core side of run-control debug, the following was added to CVA5:
+
+- A `debug_req` input and a `debug_halted` output on the core's top level (`cva5.sv`)
+- The Debug ROM addresses as configuration parameters, `CONFIG.DEBUG.HALT_ADDR` and `CONFIG.DEBUG.EXCEPTION_ADDR`
+- A debug-mode flip-flop (`debug_mode_q`) and a new `DBG_TAKEN` state in the global controller
+- `ebreak` entry into Debug Mode, when already in Debug Mode or when enabled by `dcsr.ebreakm/s/u`
+- The debug CSRs `dcsr`, `dpc`, `dscratch0` and `dscratch1`, accessible only in Debug Mode
+- Exception handling in Debug Mode: jump to `EXCEPTION_ADDR`, with no trap CSR updates
+- The `dret` instruction
+- Single step, through `dcsr.step`
+- Execute address hardware breakpoints (`tselect`, `tdata1`, `tdata2`)
+
+CVA5 already had the CSR instructions (`csrrw`, `csrrs`, `csrrc`), so the Debug ROM can use them as they are.
+
+The diagram below shows where the changes sit in the pipeline. Only `gc_unit` and `csr_unit` change. Fetch, decode, issue and the other execution units are untouched. Debug entry and `dret` reach fetch through the existing `gc_pc` override path.
+
 The rest of this section follows a halt from start to finish: entering Debug Mode, running inside it, and leaving it. Single step and hardware breakpoints then build on that same path. Almost all of the changes are in two files:
 
 - [`core/execution_units/gc_unit.sv`](https://github.com/openhwgroup/cva5/blob/master/core/execution_units/gc_unit.sv): the global controller. Debug entry, `dret`, single step, and the fetch redirect.
