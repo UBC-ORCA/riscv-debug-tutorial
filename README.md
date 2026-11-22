@@ -974,6 +974,19 @@ For full compliance, additional features defined in the [RISC-V Debug Specificat
 
 [CVA5](https://github.com/openhwgroup/cva5) is the OpenHW Group's pipelined, FPGA-oriented RV32 core. This section explains how the core was extended to support run-control debug.
 
+## How CVA5 Differs from CVE2 and DDCA
+
+The debug logic from DDCA and CVE2 cannot be copied into CVA5 as is, for three reasons:
+
+- **Many instructions are in flight.** CVA5 has parallel execution units with different latencies, so before halting it must stop issuing and wait until no older instruction can still raise an exception.
+
+  ![Taiga pipeline structure and overview](./docs/images/taiga_pipeline.png)
+
+  *The Taiga pipeline that CVA5 is derived from, with each unit's latency in cycles above it. Figure 1 from [Matthews and Shannon, CARRV 2017](https://carrv.github.io/2017/papers/matthews-taiga-carrv2017.pdf).*
+
+- **Fetch is speculative.** CVA5 has a branch predictor, so `dpc` must come from the issue stage, not from the fetch PC.
+- **Control is spread out.** No CVE2-style controller sequences every instruction. The global controller (`gc_unit`) only handles pipeline-wide events, so debug entry has to fit into its existing hold, flush and PC-override model.
+
 ### What Can Cause Entry
 
 The spec (v0.13.2) lists five causes for entering Debug Mode: a halt request, a single step, a hardware breakpoint (trigger), an `ebreak` and a reset halt request. CVE2 implements the first four, and since it is our reference, CVA5 does too. The fifth is covered in [Future Improvements](#future-improvements).
