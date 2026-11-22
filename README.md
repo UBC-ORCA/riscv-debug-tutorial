@@ -1074,6 +1074,12 @@ The core side is now in place, but nothing drives `debug_req` yet: the top-level
 
 OpenOCD and GDB need no changes. As with DDCA, the debug host does not care what the pipeline looks like.
 
+## Future Improvements
+
+- **Reset halt request.** CVA5 implements four of the five debug entry causes. The remaining one (`dcsr.cause` = 5) halts the hart straight out of reset, before the first instruction runs. It is optional in the spec.
+- **Interrupts during single step.** `dcsr.stepie` is hardwired to 0, so interrupts are masked while stepping. The improvement is to make `stepie` writable and add the logic to take an interrupt during a step.
+
+---
 # References
 
 - [RISC-V External Debug Support Specification v0.13.2](https://github.com/riscv/riscv-debug-spec)
