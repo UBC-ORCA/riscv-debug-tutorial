@@ -978,7 +978,7 @@ For full compliance, additional features defined in the [RISC-V Debug Specificat
 
 The spec defines `dpc` as the address of *the next instruction to be executed* (Section 4.8.2). In CVA5, parallel execution units leave many instructions in flight, so that address isn't known right away. If an older instruction faults, the next instruction is the trap handler, not the one waiting in issue.
 
-CVA5 already solves exactly this problem for interrupts. An interrupt waits in `WAIT_NO_EXCEPTION`, with issue held, until no older instruction can still raise an exception. Halt entry follows the same path:
+CVA5 already solves exactly this problem for interrupts. An interrupt waits in `WAIT_NO_EXCEPTION`, with issue held, until no older instruction can raise an exception. Halt entry follows the same path:
 
 ![Debug entry in the CVA5 GC state machine](./docs/images/gc_unit_fsm.png)
 
