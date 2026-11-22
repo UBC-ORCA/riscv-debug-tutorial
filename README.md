@@ -1064,6 +1064,16 @@ assign trap_valid = exception_pkt.valid & ~debug_taken & ~debug_mode;
 
 An `ebreak` that enters Debug Mode is still an exception, so the `~debug_taken` term stops it from overwriting the program's trap CSRs.
 
+## Next Step: Connecting a Debug Module
+
+The core side is now in place, but nothing drives `debug_req` yet: the top-level wrappers tie it to 0. The next step is to connect riscv-dbg, as in the CVE2 section above:
+
+- Instantiate the Debug Module and route its address range on CVA5's memory bus, as in [System-Level Memory Integration](#system-level-memory-integration).
+- Replace the placeholder `HALT_ADDR` (`0x1A110800`) and `EXCEPTION_ADDR` (`0x1A110808`) with the real Debug ROM addresses for the chosen memory map.
+- On the DE1-SoC, connect the DTM through Quartus's Virtual JTAG, as in [FPGA Implementation: Virtual JTAG](#fpga-implementation-virtual-jtag).
+
+OpenOCD and GDB need no changes. As with DDCA, the debug host does not care what the pipeline looks like.
+
 # References
 
 - [RISC-V External Debug Support Specification v0.13.2](https://github.com/riscv/riscv-debug-spec)
