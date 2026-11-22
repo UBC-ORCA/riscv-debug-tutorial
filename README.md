@@ -1008,6 +1008,14 @@ assign gc.exception.pc = |exception_valid ? exception_pc[exception_source] : iss
 - **Halt request:** no exception is valid, so the mux falls through to `issue_stage.pc`, the next instruction.
 - **`ebreak`:** the `ebreak` is an exception from the issue stage, so the mux selects the PC of the `ebreak` itself.
 
+### The Debug Mode Access Guard
+
+`dcsr`, `dpc`, `dscratch0` and `dscratch1` are only accessible in Debug Mode, as in CVE2. Any access from normal code, even at machine privilege, raises an illegal instruction exception:
+
+```systemverilog
+DCSR, DPC, DSCRATCH0, DSCRATCH1 : legal_access = CONFIG.DEBUG.ENABLE & debug_mode; //Read write, debug mode only
+```
+
 # References
 
 - [RISC-V External Debug Support Specification v0.13.2](https://github.com/riscv/riscv-debug-spec)
