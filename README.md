@@ -1086,6 +1086,68 @@ assign gc.exception.pc = |exception_valid ? exception_pc[exception_source] : iss
 - **Halt request:** no exception is valid, so the mux falls through to `issue_stage.pc`, the next instruction.
 - **`ebreak`:** the `ebreak` is an exception from the issue stage, so the mux selects the PC of the `ebreak` itself.
 
+### Capturing `dpc`
+
+One catch: `exception.valid` is a one-cycle pulse, so `ebreak_to_debug` is already gone once the FSM is *in* `DBG_TAKEN`. Waiting until then would record the wrong `dcsr.cause` and let the `ebreak` update the trap CSRs. So debug entry is captured on the transition *into* `DBG_TAKEN`:
+
+```systemverilog
+assign debug_taken = (next_state == DBG_TAKEN); 
+```
+
+Decoding a pulse from `next_state` is an existing CVA5 convention. The core already does this for interrupts, where `interrupt_taken` checks `next_state == PRE_ISSUE_FLUSH`.
+
+![Waveform of debug_taken capturing dpc and dcsr.cause for an ebreak](./docs/images/cva5_debug_taken_waveform.png)
+
+`csr_unit`, which holds the debug CSRs next to the machine-mode CSRs, writes `dpc` on that pulse with the PC selected above:
+
+```systemverilog
+else if (debug_taken & ~debug_mode)
+    dpc[31:2] <= exception_pkt.pc[31:2];
+else if (mwrite_en(DPC) & debug_mode)
+    dpc[31:2] <= updated_csr[31:2];
+```
+
+The `~debug_mode` term matters: an `ebreak` inside Debug Mode re-enters the Debug ROM, but must not overwrite `dpc` or `dcsr`, or the debugger would lose the original halt PC.
+
+### Recording the Cause in `dcsr`
+
+`dcsr` resets with `xdebugver = 4` (external debug support per the spec) and `prv = M`. On entry it records the cause and the privilege level the hart was in:
+
+```systemverilog
+if (rst)
+    dcsr <= '{default:0, xdebugver:4, cause:DBG_CAUSE_NONE, prv:MACHINE_PRIVILEGE};
+else if (debug_taken & ~debug_mode) begin
+    dcsr.cause <= debug_cause;
+    dcsr.prv <= privilege_level;
+end
+```
+
+When several causes happen in the same cycle, `dcsr.cause` records the one with the highest priority (spec Section 4.8.1):
+
+```systemverilog
+always_comb begin
+    if (trigger_match)
+        debug_cause = DBG_CAUSE_TRIGGER; //Priority 4
+    else if (ebreak_to_debug)
+        debug_cause = DBG_CAUSE_EBREAK; //Priority 3
+    else if (debug_req)
+        debug_cause = DBG_CAUSE_HALTREQ; //Priority 1
+    else
+        debug_cause = DBG_CAUSE_STEP; //Priority 0
+end
+```
+
+### Switching to Machine Privilege
+
+The spec requires Debug Mode to run at machine privilege (Section 4.1), so the debugger can reach every CSR and all memory even if the program was halted in U-mode. In CVE2 this comes for free, because every exception, debug entry included, switches to M-mode. In CVA5, the added debug entry deliberately bypasses the trap path to leave `mepc`, `mcause` and `mstatus` untouched, so the switch has to be explicit:
+
+```systemverilog
+else if (debug_taken & ~debug_mode) //Debug mode runs at machine privilege, dcsr.prv keeps the old level
+    privilege_level <= MACHINE_PRIVILEGE;
+else if (dret) //Return to the privilege level saved on debug entry
+    privilege_level <= dcsr.prv;
+```
+
 ### The Debug Mode Access Guard
 
 `dcsr`, `dpc`, `dscratch0` and `dscratch1` are only accessible in Debug Mode, as in CVE2. Any access from normal code, even at machine privilege, raises an illegal instruction exception:
