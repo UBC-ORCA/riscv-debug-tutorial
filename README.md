@@ -1064,6 +1064,26 @@ assign trap_valid = exception_pkt.valid & ~debug_taken & ~debug_mode;
 
 An `ebreak` that enters Debug Mode is still an exception, so the `~debug_taken` term stops it from overwriting the program's trap CSRs.
 
+## Hardware Breakpoints
+
+A hardware breakpoint halts the hart when it reaches an address, without replacing any instruction in memory. That makes it usable for code in ROM or flash, where GDB cannot write an `ebreak`.
+
+CVA5 only implements the spec's *execute address* match (Section 5.2.9), which fires on the address of an instruction. `CONFIG.DEBUG.NUM_TRIGGERS` sets how many exist, 1 by default, and each is controlled through three CSRs that can only be written in Debug Mode:
+
+| CSR | Use |
+|---|---|
+| `tselect` | Picks which trigger `tdata1` and `tdata2` refer to |
+| `tdata1` | Trigger configuration. Only the `execute` enable bit is stored, the other fields are hard-wired |
+| `tdata2` | The address to match |
+
+The address is compared with the issue-stage PC, because fetch is speculative:
+
+```systemverilog
+assign tmatch_hit[i] = tmatch_control[i] & issue_stage.stage_valid & (issue_stage.pc == tmatch_value[i]);
+```
+
+The resulting `trigger_match` feeds `enter_debug_mode`, so a breakpoint takes the same entry path as a halt request. `dpc` should then hold the matching instruction, not yet executed.
+
 ## Next Step: Connecting a Debug Module
 
 The core side is now in place, but nothing drives `debug_req` yet: the top-level wrappers tie it to 0. The next step is to connect riscv-dbg, as in the CVE2 section above:
