@@ -18,6 +18,7 @@
  *
  * Author(s):
  *             Eric Matthews <ematthew@sfu.ca>
+ * Modified 2026 by Pouya Hatami: added RISC-V debug mode support.
  */
 
 module csr_unit

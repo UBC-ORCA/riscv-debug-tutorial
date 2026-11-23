@@ -18,6 +18,7 @@
  *
  * Author(s):
  *             Chris Keilbart <ckeilbar@sfu.ca>
+ * Modified 2026 by Pouya Hatami: added RISC-V debug mode support.
  */
 
 module cva5_wrapper
