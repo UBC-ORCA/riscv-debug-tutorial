@@ -10,13 +10,14 @@
 6. [Debug Host Software](#debug-host-software)
 7. [End-to-End Debug Flow](#end-to-end-debug-flow)
 8. [What the DDCA CPU Would Need](#what-the-ddca-cpu-would-need)
-9. [References](#references)
+9. [Adding Debug to CVA5](#adding-debug-to-cva5)
+10. [References](#references)
 
 ---
 
 # Introduction
 
-> This tutorial explains the complete hardware and software debug chain for a RISC-V soft core, from GDB down to the CPU signals, using the [CV32E20 RISC-V Core](https://github.com/openhwgroup/cve2/tree/main) as a reference. A separate section covers what a simpler educational CPU like the DDCA core would need to support the debug infrastructure.
+> This tutorial explains the complete hardware and software debug chain for a RISC-V soft core, from GDB down to the CPU signals, using the [CV32E20 RISC-V Core](https://github.com/openhwgroup/cve2/tree/main) as a reference. A separate section covers what a simpler educational CPU like the DDCA core would need to support the debug infrastructure, and a final section shows how the same debug support was added to [CVA5](https://github.com/openhwgroup/cva5), a deeper FPGA-oriented pipeline.
 
 ---
 ## Why Do We Need a CPU Debugger?
@@ -52,6 +53,7 @@ This tutorial covers:
 - The roles of the Debug Module, Debug Transport Module, and Debug Module Interface
 - How GDB and OpenOCD connect to a RISC-V soft core
 - What a simple educational CPU would need to add to support debug
+- How debug was added to CVA5, a core with parallel, variable-latency execution units
 
 _This tutorial does not cover:_
 
@@ -951,16 +953,7 @@ assign ReadData = dm_sel ? dm_rdata : mem_rdata;
 ----
 ## What Stays the Same
 
-The key observation is that only the CPU core needs to be modified to support debug. The rest of the debug stack — riscv-dbg, the Debug ROM, OpenOCD, and GDB — remains unchanged. The Debug Module interacts with the CPU in exactly the same way regardless of the internal CPU design, so it does not care whether the CPU is single-cycle (DDCA) or pipelined (CVE2).
-
-To support debug, we extended the ISA with:
-
-- CSR instructions: `csrrw`, `csrrs`, `csrrc`
-- Debug control instructions:
-    - `ebreak` — used to re-enter debug mode from software
-    - `dret` — used to exit debug mode and resume execution
-
-These additions are sufficient for the Debug ROM and Program Buffer to function correctly.
+Apart from routing the Debug Module's address range on the memory bus, the debug changes are all inside the CPU core. riscv-dbg, the Debug ROM, OpenOCD and GDB stay the same, because the Debug Module talks to every core through the same interface, whether it is single-cycle like DDCA or pipelined like CVE2 and CVA5.
 
 ## Limitations of This Implementation
 
@@ -977,11 +970,326 @@ For full compliance, additional features defined in the [RISC-V Debug Specificat
 
 ---
 
+# Adding Debug to CVA5
+
+[CVA5](https://github.com/openhwgroup/cva5) is the OpenHW Group's pipelined, FPGA-oriented RV32 core. This section explains how the core was extended to support run-control debug.
+
+## How CVA5 Differs from CVE2 and DDCA
+
+The debug logic from DDCA and CVE2 cannot be copied into CVA5 as is, for three reasons:
+
+- **Many instructions are in flight.** CVA5 has parallel execution units with different latencies, so before halting it must stop issuing and wait until no older instruction can still raise an exception.
+
+  ![Taiga pipeline structure and overview](./docs/images/taiga_pipeline.png)
+
+  *The Taiga pipeline that CVA5 is derived from, with each unit's latency in cycles above it. Figure 1 from [Matthews and Shannon, CARRV 2017](https://carrv.github.io/2017/papers/matthews-taiga-carrv2017.pdf).*
+
+- **Fetch is speculative.** CVA5 has a branch predictor, so `dpc` must come from the issue stage, not from the fetch PC.
+- **Control is spread out.** No CVE2-style controller sequences every instruction. The global controller (`gc_unit`) only handles pipeline-wide events, so debug entry has to fit into its existing hold, flush and PC-override model.
+
+## What Was Added to CVA5
+
+To support the core side of run-control debug, the following was added to CVA5:
+
+- A `debug_req` input and a `debug_halted` output on the core's top level (`cva5.sv`)
+- The Debug ROM addresses as configuration parameters, `CONFIG.DEBUG.HALT_ADDR` and `CONFIG.DEBUG.EXCEPTION_ADDR`
+- A debug-mode flip-flop (`debug_mode_q`) and a new `DBG_TAKEN` state in the global controller
+- `ebreak` entry into Debug Mode, when already in Debug Mode or when enabled by `dcsr.ebreakm/s/u`
+- The debug CSRs `dcsr`, `dpc`, `dscratch0` and `dscratch1`, accessible only in Debug Mode
+- Exception handling in Debug Mode: jump to `EXCEPTION_ADDR`, with no trap CSR updates
+- The `dret` instruction
+- Single step, through `dcsr.step`
+- Execute address hardware breakpoints (`tselect`, `tdata1`, `tdata2`)
+
+CVA5 already had the CSR instructions (`csrrw`, `csrrs`, `csrrc`), so the Debug ROM can use them as they are.
+
+The diagram below shows where the changes sit in the pipeline. Only `gc_unit` and `csr_unit` change. Fetch, decode, issue and the other execution units are untouched. Debug entry and `dret` reach fetch through the existing `gc_pc` override path.
+
+![CVA5 pipeline with the modules changed to add debug mode](./docs/images/cva5_debug_pipeline.png)
+
+The rest of this section follows a halt from start to finish: entering Debug Mode, running inside it, and leaving it. Single step and hardware breakpoints then build on that same path. Almost all of the changes are in two files:
+
+- [`core/execution_units/gc_unit.sv`](https://github.com/openhwgroup/cva5/blob/master/core/execution_units/gc_unit.sv): the global controller. Debug entry, `dret`, single step, and the fetch redirect.
+- [`core/execution_units/csr_unit.sv`](https://github.com/openhwgroup/cva5/blob/master/core/execution_units/csr_unit.sv): the CSR file. Debug CSRs, privilege changes, and blocking trap updates in Debug Mode.
+
+## Entering Debug Mode
+
+The global controller (`gc_unit`) is the closest thing CVA5 has to CVE2's controller, but it only steps in for events that need the whole pipeline: exceptions, interrupts, `mret`/`sret`, `fence.i` and some CSR writes. It does this with a small state machine. Debug entry adds one new state, `DBG_TAKEN`, and reuses everything else, as the state diagram below shows.
+
+### What Can Cause Entry
+
+The spec (v0.13.2) lists five causes for entering Debug Mode: a halt request, a single step, a hardware breakpoint (trigger), an `ebreak` and a reset halt request. CVE2 implements the first four, and since it is our reference, CVA5 does too. The fifth is covered in [Future Improvements](#future-improvements).
+
+Of the four, the first three share one signal. The halt request logic is carried over from CVE2, and [Single Step](#single-step) and [Hardware Breakpoints](#hardware-breakpoints) are covered later:
+
+```systemverilog
+assign enter_debug_mode_prio_d = (debug_req | do_single_step_d) & ~debug_mode_q;
+assign enter_debug_mode = enter_debug_mode_prio_d | (trigger_match & ~debug_mode_q);
+```
+
+`ebreak` is handled separately, because it is an instruction in the program and arrives as an exception.
+
+### When Does `ebreak` Enter Debug Mode?
+
+By default it does not. The RISC-V privileged spec defines `ebreak` as a breakpoint exception: the CPU traps to `mtvec`, the program's own exception handler, like any other fault. No debugger is involved.
+
+An `ebreak` goes to Debug Mode instead in only two cases:
+
+1. **The hart is already in Debug Mode.** The Debug Module ends every Program Buffer and abstract command with an `ebreak`, which means "command done, go back to the park loop".
+2. **The debugger enabled it with a `dcsr` bit.** There is one bit per privilege level:
+
+| Bit       | Applies when the `ebreak` runs in |
+| --------- | --------------------------------- |
+| `ebreakm` | M-mode (machine)                  |
+| `ebreaks` | S-mode (supervisor)               |
+| `ebreaku` | U-mode (user)                     |
+
+This is how GDB software breakpoints work. GDB replaces an instruction with an `ebreak` and sets, for example, `ebreakm = 1`. When the program reaches it, the hart halts into the debugger instead of jumping to the program's exception handler.
+
+In the code, these are the two terms in the brackets. `ebreak_into_debug` is the `dcsr` bit for the current privilege level:
+
+```systemverilog
+assign ebreak_to_debug = exception_valid[PRE_ISSUE_EXCEPTION] & (gc.exception.code == BREAK) & (debug_mode_q | ebreak_into_debug);
+```
+
+### Finding a Clean Instruction Boundary
+
+The spec defines `dpc` as the address of *the next instruction to be executed* (Section 4.8.2). In CVA5, parallel execution units leave many instructions in flight, so that address isn't known right away. If an older instruction faults, the next instruction is the trap handler, not the one waiting in issue.
+
+CVA5 already solves exactly this problem for interrupts. An interrupt waits in `WAIT_NO_EXCEPTION`, with issue held, until no older instruction can raise an exception. Halt entry follows the same path:
+
+![Debug entry in the CVA5 GC state machine](./docs/images/gc_unit_fsm.png)
+
+While the FSM waits here, one of three things ends the wait. The numbers match the diagram and give the order of the checks, so (1) wins if several are true.
+
+- **(3) The pipeline drains (the normal case).** No instruction in flight can still fault, branch mispredictions are resolved, and an instruction is waiting in issue (`~possible_exception & ~branch_flush & issue_stage.stage_valid`). That instruction is the next one to run, so `issue_stage.pc` is the correct `dpc`. The FSM moves to `DBG_TAKEN`, even if an interrupt is also pending. An interrupt on its own still goes to `PRE_ISSUE_FLUSH`.
+- **(1) An exception or CSR flush arrives first.** It overrides the pending halt and goes to `PRE_ISSUE_FLUSH`. The exception to this is an `ebreak` that should enter Debug Mode (`ebreak_to_debug`), which goes straight to `DBG_TAKEN`.
+- **(2) Nothing is pending anymore.** With no interrupt or halt left to take, the FSM returns to `IDLE`.
+
+### Choosing the `dpc` Value
+
+A hart enters Debug Mode in two different ways, and `dpc` points to a different address for each case (spec Section 4.8.2):
+
+| Entry | Caused by | `dpc` points to |
+|---|---|---|
+| Halt request, single step, trigger | The debugger, from outside | The next instruction, not yet executed |
+| `ebreak` | An instruction in the program, e.g. a GDB software breakpoint | The `ebreak` itself |
+
+CVE2 uses two FSM states for this, `DBG_TAKEN_IF` and `DBG_TAKEN_ID`, which save the PC from different pipeline stages. The debug logic added to CVA5 needs only one state, because the global controller already has a mux that picks the right PC:
+
+```systemverilog
+assign gc.exception.pc = |exception_valid ? exception_pc[exception_source] : issue_stage.pc;
+```
+
+<img src="./docs/images/gc_exception_pc_mux.png" alt="The gc.exception.pc mux" width="300">
+
+- **Halt request:** no exception is valid, so the mux falls through to `issue_stage.pc`, the next instruction.
+- **`ebreak`:** the `ebreak` is an exception from the issue stage, so the mux selects the PC of the `ebreak` itself.
+
+### Capturing `dpc`
+
+One catch: `exception.valid` is a one-cycle pulse, so `ebreak_to_debug` is already gone once the FSM is *in* `DBG_TAKEN`. Waiting until then would record the wrong `dcsr.cause` and let the `ebreak` update the trap CSRs. So debug entry is captured on the transition *into* `DBG_TAKEN`:
+
+```systemverilog
+assign debug_taken = (next_state == DBG_TAKEN); 
+```
+
+Decoding a pulse from `next_state` is an existing CVA5 convention. The core already does this for interrupts, where `interrupt_taken` checks `next_state == PRE_ISSUE_FLUSH`.
+
+![Waveform of debug_taken capturing dpc and dcsr.cause for an ebreak](./docs/images/cva5_debug_taken_waveform.png)
+
+`csr_unit`, which holds the debug CSRs next to the machine-mode CSRs, writes `dpc` on that pulse with the PC selected above:
+
+```systemverilog
+else if (debug_taken & ~debug_mode)
+    dpc[31:2] <= exception_pkt.pc[31:2];
+else if (mwrite_en(DPC) & debug_mode)
+    dpc[31:2] <= updated_csr[31:2];
+```
+
+The `~debug_mode` term matters: an `ebreak` inside Debug Mode re-enters the Debug ROM, but must not overwrite `dpc` or `dcsr`, or the debugger would lose the original halt PC.
+
+### Recording the Cause in `dcsr`
+
+`dcsr` resets with `xdebugver = 4` (external debug support per the spec) and `prv = M`. On entry it records the cause and the privilege level the hart was in:
+
+```systemverilog
+if (rst)
+    dcsr <= '{default:0, xdebugver:4, cause:DBG_CAUSE_NONE, prv:MACHINE_PRIVILEGE};
+else if (debug_taken & ~debug_mode) begin
+    dcsr.cause <= debug_cause;
+    dcsr.prv <= privilege_level;
+end
+```
+
+When several causes happen in the same cycle, `dcsr.cause` records the one with the highest priority (spec Section 4.8.1):
+
+```systemverilog
+always_comb begin
+    if (trigger_match)
+        debug_cause = DBG_CAUSE_TRIGGER; //Priority 4
+    else if (ebreak_to_debug)
+        debug_cause = DBG_CAUSE_EBREAK; //Priority 3
+    else if (debug_req)
+        debug_cause = DBG_CAUSE_HALTREQ; //Priority 1
+    else
+        debug_cause = DBG_CAUSE_STEP; //Priority 0
+end
+```
+
+### Switching to Machine Privilege
+
+The spec requires Debug Mode to run at machine privilege (Section 4.1), so the debugger can reach every CSR and all memory even if the program was halted in U-mode. In CVE2 this comes for free, because every exception, debug entry included, switches to M-mode. In CVA5, the added debug entry deliberately bypasses the trap path to leave `mepc`, `mcause` and `mstatus` untouched, so the switch has to be explicit:
+
+```systemverilog
+else if (debug_taken & ~debug_mode) //Debug mode runs at machine privilege, dcsr.prv keeps the old level
+    privilege_level <= MACHINE_PRIVILEGE;
+else if (dret) //Return to the privilege level saved on debug entry
+    privilege_level <= dcsr.prv;
+```
+
+### Redirecting Fetch to the Debug ROM
+
+Adding debug to CVA5 needed **no new redirect logic**. The global controller can already override the PC: it holds a target address in `gc_pc`, and `PRE_ISSUE_FLUSH` pulses `gc_pc_override` for one cycle. That pulse has the highest priority in fetch's next-PC mux, and it also flushes everything fetched speculatively.
+
+Debug entry and `dret` only add new values for `gc_pc`:
+
+```systemverilog
+if (state == DBG_TAKEN)
+    gc_pc <= CONFIG.DEBUG.HALT_ADDR;
+else if (gc.exception.valid & debug_mode_q)
+    gc_pc <= CONFIG.DEBUG.EXCEPTION_ADDR;
+...
+else if (instruction_issued) begin
+    ...
+    else if (is_dret)
+        gc_pc <= dpc;
+end
+```
+
+Every event goes through `PRE_ISSUE_FLUSH` once, so the override fires once. This is the main lesson of the CVA5 port: **find the mechanism the core already uses for traps, and route debug through it.**
+
+For debug entry, `DBG_TAKEN` loads `gc_pc` with `HALT_ADDR`. The following `PRE_ISSUE_FLUSH` cycle pulses the override, and fetch restarts in the debug ROM. `DBG_TAKEN` also sets `debug_mode_q`, the same debug-mode flip-flop as in DDCA, and `dret` clears it.
+
+
+### The Debug Mode Access Guard
+
+`dcsr`, `dpc`, `dscratch0` and `dscratch1` are only accessible in Debug Mode, as in CVE2. Any access from normal code, even at machine privilege, raises an illegal instruction exception:
+
+```systemverilog
+DCSR, DPC, DSCRATCH0, DSCRATCH1 : legal_access = CONFIG.DEBUG.ENABLE & debug_mode; //Read write, debug mode only
+```
+
+### Exceptions Inside Debug Mode
+
+An exception in Debug Mode, for example a bad load in the Program Buffer, must not update any registers (`mepc`, `mcause`, `mtval`, `mstatus`, `dpc`), and must jump to the Debug Module's exception entry instead of `mtvec` (spec Section 4.1).
+
+`csr_unit` already gates every trap update with one signal, `trap_valid`. Masking that signal is enough to block all of them:
+
+```systemverilog
+assign trap_valid = exception_pkt.valid & ~debug_taken & ~debug_mode;
+```
+
+An `ebreak` that enters Debug Mode is still an exception, so the `~debug_taken` term stops it from overwriting the program's trap CSRs.
+
+## Leaving Debug Mode with `dret`
+
+`dret` (encoding `0x7B200073`) returns from Debug Mode. Executing it outside Debug Mode must raise an illegal instruction exception (spec Section 4.6).
+
+CVA5 has no central decoder, so an instruction becomes illegal in one of two ways: no unit claims it, or a unit claims it and then raises the exception itself because the context is wrong. `gc_unit` already does the second for `mret` in U-mode, and `dret` follows the same pattern:
+
+```systemverilog
+//Claim: DRET is always claimed, the GC exception makes it illegal outside debug mode
+(CONFIG.MODES != BARE & CONFIG.DEBUG.ENABLE & instruction inside {DRET})
+
+//Raise illegal outside debug mode
+new_exception |= is_dret & ~debug_mode_q; //DRET outside debug mode is illegal at any privilege
+```
+
+A legal `dret` does three things, all driven by one registered `dret` pulse that is gated by `~new_exception`:
+
+| Effect | Where |
+|---|---|
+| PC ← `dpc` | `gc_unit`: `gc_pc <= dpc`, then `PRE_ISSUE_FLUSH` redirects fetch |
+| Leave Debug Mode | `gc_unit`: `dret` clears `debug_mode_d` |
+| Privilege ← `dcsr.prv` | `csr_unit` |
+
+The debugger can change `dcsr.prv` before `dret`. If it writes a privilege level the core doesn't support, the spec lets the hart pick any supported mode. CVA5 picks M, the same rule it uses for `mstatus.mpp`.
+
+### Debug Entry and Exit, Cycle by Cycle
+
+Entering and leaving Debug Mode end the same way: `gc_pc` is loaded with the target address, then `PRE_ISSUE_FLUSH` redirects fetch to it. The difference is what comes before that step. A halt request has to wait for the pipeline to drain, while `dret` does not.
+
+![Timing of a halt request and of dret](./docs/images/cva5_debug_timing.png)
+
+**Entering.** The halt request arrives in cycle `t`, and issue is held from `t+1` while the instructions in flight finish. CVA5 completes instructions out of order, so this wait takes a variable number of cycles. Once no instruction can still raise an exception, `debug_taken` pulses for one cycle. On the next edge, `csr_unit` saves `dpc`, records `dcsr.cause` and `dcsr.prv`, and switches to M privilege. `DBG_TAKEN` then loads `HALT_ADDR` into `gc_pc` and sets debug mode, and `PRE_ISSUE_FLUSH` sends fetch to the Debug ROM.
+
+**Leaving.** `dret` reaches the same redirect step without the wait. When it issues in cycle `t`, `gc_pc` loads `dpc` and the FSM moves straight to `PRE_ISSUE_FLUSH`, the same path `mret` takes. The registered `dret` pulse in that cycle clears debug mode and restores the privilege level on the next edge, which is also when fetch resumes at `dpc`.
+
+## Single Step
+
+With `dcsr.step` set, `dret` lets exactly one instruction run before the hart halts again. So it needs a signal that pulses once per executed instruction.
+
+CVE2 uses `instr_valid_i`, the valid bit of its ID stage, because in CVE2 the ID stage *is* execute. In CVA5 an instruction can sit in the issue stage for many cycles waiting for operands or a free unit, so "valid in issue" is not the same as "executed". The right signal is `instruction_issued`, which is high for exactly one cycle per instruction, the cycle it leaves issue.
+
+There is one edge case. An `ecall`, an illegal instruction, or an instruction whose fetch failed is never claimed by a unit, so it never issues. It traps at the issue stage instead. Using `instruction_issued` alone, the step logic would miss it and halt one instruction late, after the first instruction of the trap handler had already run. The spec requires the halt *before* the handler runs (Section 4.8.1, `step`), so the issue-stage exception also counts:
+
+```systemverilog
+//Ecall, illegal and fetch faults trap at issue without issuing, so a pre-issue exception also counts as the stepped instruction
+assign do_single_step_d = (instruction_issued | exception_valid[PRE_ISSUE_EXCEPTION]) ? ~debug_mode_q & debug_single_step : do_single_step_q;
+```
+
+Interrupts are masked in Debug Mode and while stepping. `dcsr.stepie` is hardwired to 0, which the spec allows and which CVE2 also does:
+
+```systemverilog
+//Debug mode masks all interrupts, single step does too since dcsr.stepie is hardwired to 0
+if (debug_mode | dcsr.step)
+    interrupt_pending = 0;
+```
+
+## Hardware Breakpoints
+
+A hardware breakpoint halts the hart when it reaches an address, without replacing any instruction in memory. That makes it usable for code in ROM or flash, where GDB cannot write an `ebreak`.
+
+CVA5 only implements the spec's *execute address* match (Section 5.2.9), which fires on the address of an instruction. `CONFIG.DEBUG.NUM_TRIGGERS` sets how many exist, 1 by default, and each is controlled through three CSRs that can only be written in Debug Mode:
+
+| CSR | Use |
+|---|---|
+| `tselect` | Picks which trigger `tdata1` and `tdata2` refer to |
+| `tdata1` | Trigger configuration. Only the `execute` enable bit is stored, the other fields are hard-wired |
+| `tdata2` | The address to match |
+
+The address is compared with the issue-stage PC, because fetch is speculative:
+
+```systemverilog
+assign tmatch_hit[i] = tmatch_control[i] & issue_stage.stage_valid & (issue_stage.pc == tmatch_value[i]);
+```
+
+The resulting `trigger_match` feeds `enter_debug_mode`, so a breakpoint takes the same entry path as a halt request. `dpc` should then hold the matching instruction, not yet executed.
+
+## Next Step: Connecting a Debug Module
+
+The core side is now in place, but nothing drives `debug_req` yet: the top-level wrappers tie it to 0. The next step is to connect riscv-dbg, as in the CVE2 section above:
+
+- Instantiate the Debug Module and route its address range on CVA5's memory bus, as in [System-Level Memory Integration](#system-level-memory-integration).
+- Replace the placeholder `HALT_ADDR` (`0x1A110800`) and `EXCEPTION_ADDR` (`0x1A110808`) with the real Debug ROM addresses for the chosen memory map.
+- On the DE1-SoC, connect the DTM through Quartus's Virtual JTAG, as in [FPGA Implementation: Virtual JTAG](#fpga-implementation-virtual-jtag).
+
+OpenOCD and GDB need no changes. As with DDCA, the debug host does not care what the pipeline looks like.
+
+## Future Improvements
+
+- **Reset halt request.** CVA5 implements four of the five debug entry causes. The remaining one (`dcsr.cause` = 5) halts the hart straight out of reset, before the first instruction runs. It is optional in the spec.
+- **Interrupts during single step.** `dcsr.stepie` is hardwired to 0, so interrupts are masked while stepping. The improvement is to make `stepie` writable and add the logic to take an interrupt during a step.
+
+---
 # References
 
 - [RISC-V External Debug Support Specification v0.13.2](https://github.com/riscv/riscv-debug-spec)
 - [CVE2 GitHub Repository](https://github.com/openhwgroup/cve2)
 - [CVE2 User Manual](https://docs.openhwgroup.org/projects/cve2-user-manual/en/latest/)
+- [CVA5 GitHub Repository](https://github.com/openhwgroup/cva5)
+- [Taiga: A Configurable RISC-V Soft-Processor Framework for Heterogeneous Computing Systems Research — Matthews and Shannon, CARRV 2017](https://carrv.github.io/2017/papers/matthews-taiga-carrv2017.pdf)
 - [PULP riscv-dbg](https://github.com/pulp-platform/riscv-dbg)
 - [RISC-V OpenOCD Fork](https://github.com/riscv-collab/riscv-openocd)
 - [BoxLambda Project](https://github.com/epsilon537/boxlambda)
