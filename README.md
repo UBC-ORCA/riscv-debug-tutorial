@@ -974,6 +974,8 @@ For full compliance, additional features defined in the [RISC-V Debug Specificat
 
 [CVA5](https://github.com/openhwgroup/cva5) is the OpenHW Group's pipelined, FPGA-oriented RV32 core. This section explains how the core was extended to support run-control debug.
 
+The modified RTL is in [`rtl/cva5`](./rtl/cva5). It is based on OpenHW's CVA5 at commit [`2acf79f`](https://github.com/openhwfoundation/cva5/commit/2acf79f), keeps its Apache 2.0 license, and each changed file is marked in its header.
+
 ## How CVA5 Differs from CVE2 and DDCA
 
 The debug logic from DDCA and CVE2 cannot be copied into CVA5 as is, for three reasons:
@@ -1081,7 +1083,7 @@ CVE2 uses two FSM states for this, `DBG_TAKEN_IF` and `DBG_TAKEN_ID`, which save
 assign gc.exception.pc = |exception_valid ? exception_pc[exception_source] : issue_stage.pc;
 ```
 
-<img src="./docs/images/gc_exception_pc_mux.png" alt="The gc.exception.pc mux" width="450">
+<img src="./docs/images/gc_exception_pc_mux.png" alt="The gc.exception.pc mux" width="300">
 
 - **Halt request:** no exception is valid, so the mux falls through to `issue_stage.pc`, the next instruction.
 - **`ebreak`:** the `ebreak` is an exception from the issue stage, so the mux selects the PC of the `ebreak` itself.
@@ -1148,6 +1150,30 @@ else if (dret) //Return to the privilege level saved on debug entry
     privilege_level <= dcsr.prv;
 ```
 
+### Redirecting Fetch to the Debug ROM
+
+Adding debug to CVA5 needed **no new redirect logic**. The global controller can already override the PC: it holds a target address in `gc_pc`, and `PRE_ISSUE_FLUSH` pulses `gc_pc_override` for one cycle. That pulse has the highest priority in fetch's next-PC mux, and it also flushes everything fetched speculatively.
+
+Debug entry and `dret` only add new values for `gc_pc`:
+
+```systemverilog
+if (state == DBG_TAKEN)
+    gc_pc <= CONFIG.DEBUG.HALT_ADDR;
+else if (gc.exception.valid & debug_mode_q)
+    gc_pc <= CONFIG.DEBUG.EXCEPTION_ADDR;
+...
+else if (instruction_issued) begin
+    ...
+    else if (is_dret)
+        gc_pc <= dpc;
+end
+```
+
+Every event goes through `PRE_ISSUE_FLUSH` once, so the override fires once. This is the main lesson of the CVA5 port: **find the mechanism the core already uses for traps, and route debug through it.**
+
+For debug entry, `DBG_TAKEN` loads `gc_pc` with `HALT_ADDR`. The following `PRE_ISSUE_FLUSH` cycle pulses the override, and fetch restarts in the debug ROM. `DBG_TAKEN` also sets `debug_mode_q`, the same debug-mode flip-flop as in DDCA, and `dret` clears it.
+
+
 ### The Debug Mode Access Guard
 
 `dcsr`, `dpc`, `dscratch0` and `dscratch1` are only accessible in Debug Mode, as in CVE2. Any access from normal code, even at machine privilege, raises an illegal instruction exception:
@@ -1167,6 +1193,61 @@ assign trap_valid = exception_pkt.valid & ~debug_taken & ~debug_mode;
 ```
 
 An `ebreak` that enters Debug Mode is still an exception, so the `~debug_taken` term stops it from overwriting the program's trap CSRs.
+
+## Leaving Debug Mode with `dret`
+
+`dret` (encoding `0x7B200073`) returns from Debug Mode. Executing it outside Debug Mode must raise an illegal instruction exception (spec Section 4.6).
+
+CVA5 has no central decoder, so an instruction becomes illegal in one of two ways: no unit claims it, or a unit claims it and then raises the exception itself because the context is wrong. `gc_unit` already does the second for `mret` in U-mode, and `dret` follows the same pattern:
+
+```systemverilog
+//Claim: DRET is always claimed, the GC exception makes it illegal outside debug mode
+(CONFIG.MODES != BARE & CONFIG.DEBUG.ENABLE & instruction inside {DRET})
+
+//Raise illegal outside debug mode
+new_exception |= is_dret & ~debug_mode_q; //DRET outside debug mode is illegal at any privilege
+```
+
+A legal `dret` does three things, all driven by one registered `dret` pulse that is gated by `~new_exception`:
+
+| Effect | Where |
+|---|---|
+| PC ← `dpc` | `gc_unit`: `gc_pc <= dpc`, then `PRE_ISSUE_FLUSH` redirects fetch |
+| Leave Debug Mode | `gc_unit`: `dret` clears `debug_mode_d` |
+| Privilege ← `dcsr.prv` | `csr_unit` |
+
+The debugger can change `dcsr.prv` before `dret`. If it writes a privilege level the core doesn't support, the spec lets the hart pick any supported mode. CVA5 picks M, the same rule it uses for `mstatus.mpp`.
+
+### Debug Entry and Exit, Cycle by Cycle
+
+Entering and leaving Debug Mode end the same way: `gc_pc` is loaded with the target address, then `PRE_ISSUE_FLUSH` redirects fetch to it. The difference is what comes before that step. A halt request has to wait for the pipeline to drain, while `dret` does not.
+
+![Timing of a halt request and of dret](./docs/images/cva5_debug_timing.png)
+
+**Entering.** The halt request arrives in cycle `t`, and issue is held from `t+1` while the instructions in flight finish. CVA5 completes instructions out of order, so this wait takes a variable number of cycles. Once no instruction can still raise an exception, `debug_taken` pulses for one cycle. On the next edge, `csr_unit` saves `dpc`, records `dcsr.cause` and `dcsr.prv`, and switches to M privilege. `DBG_TAKEN` then loads `HALT_ADDR` into `gc_pc` and sets debug mode, and `PRE_ISSUE_FLUSH` sends fetch to the Debug ROM.
+
+**Leaving.** `dret` reaches the same redirect step without the wait. When it issues in cycle `t`, `gc_pc` loads `dpc` and the FSM moves straight to `PRE_ISSUE_FLUSH`, the same path `mret` takes. The registered `dret` pulse in that cycle clears debug mode and restores the privilege level on the next edge, which is also when fetch resumes at `dpc`.
+
+## Single Step
+
+With `dcsr.step` set, `dret` lets exactly one instruction run before the hart halts again. So it needs a signal that pulses once per executed instruction.
+
+CVE2 uses `instr_valid_i`, the valid bit of its ID stage, because in CVE2 the ID stage *is* execute. In CVA5 an instruction can sit in the issue stage for many cycles waiting for operands or a free unit, so "valid in issue" is not the same as "executed". The right signal is `instruction_issued`, which is high for exactly one cycle per instruction, the cycle it leaves issue.
+
+There is one edge case. An `ecall`, an illegal instruction, or an instruction whose fetch failed is never claimed by a unit, so it never issues. It traps at the issue stage instead. Using `instruction_issued` alone, the step logic would miss it and halt one instruction late, after the first instruction of the trap handler had already run. The spec requires the halt *before* the handler runs (Section 4.8.1, `step`), so the issue-stage exception also counts:
+
+```systemverilog
+//Ecall, illegal and fetch faults trap at issue without issuing, so a pre-issue exception also counts as the stepped instruction
+assign do_single_step_d = (instruction_issued | exception_valid[PRE_ISSUE_EXCEPTION]) ? ~debug_mode_q & debug_single_step : do_single_step_q;
+```
+
+Interrupts are masked in Debug Mode and while stepping. `dcsr.stepie` is hardwired to 0, which the spec allows and which CVE2 also does:
+
+```systemverilog
+//Debug mode masks all interrupts, single step does too since dcsr.stepie is hardwired to 0
+if (debug_mode | dcsr.step)
+    interrupt_pending = 0;
+```
 
 ## Hardware Breakpoints
 
